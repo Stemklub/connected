@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useApp } from '../state'
 import { go as goTo } from '../lib/go'
 import { SCHOOL } from '../config/school'
@@ -13,6 +13,15 @@ export function Header() {
   const { ds, me, on, toast } = useApp()
   const [notes, setNotes] = useState<AppNotification[]>([])
   const [sheet, setSheet] = useState<'notes' | 'help' | null>(null)
+  const loc = useLocation()
+  // Prozor se zatvara pri promjeni ekrana i tipkom Escape.
+  useEffect(() => setSheet(null), [loc.pathname, loc.search])
+  useEffect(() => {
+    if (!sheet) return
+    const k = (e: KeyboardEvent) => e.key === 'Escape' && setSheet(null)
+    addEventListener('keydown', k)
+    return () => removeEventListener('keydown', k)
+  }, [sheet])
   const [menu, setMenu] = useState(false)
   const toasted = useRef<Set<string> | null>(null)
   const nav = useNavigate()
@@ -26,7 +35,8 @@ export function Header() {
     } else {
       const fresh = list.find((n) => !n.read && !toasted.current!.has(n.id))
       list.forEach((n) => toasted.current!.add(n.id))
-      if (fresh) {
+      // Prilike stižu tiho (samo tačka na zvoncu), da ne prekidaju poziv ili rad tima.
+      if (fresh && fresh.kind !== 'opportunity') {
         toast(fresh.body, fresh.kind === 'new_member' ? '🎉' : '🔔')
         try {
           navigator.vibrate?.(80)
@@ -97,10 +107,12 @@ export function Header() {
                 style={{ boxShadow: 'none', background: n.read ? '#f7f6fb' : 'var(--violet-soft)' }}
                 onClick={() => {
                   setSheet(null)
-                  if (n.project_id) nav(`/projekat/${n.project_id}`)
+                  if (n.opportunity_id) nav(`/prilika/${n.opportunity_id}`)
+                  else if (n.project_id) nav(`/projekat/${n.project_id}`)
                 }}
               >
-                <p style={{ fontWeight: 600 }}>{n.body}</p>
+                <p style={{ fontWeight: 600 }}>{n.kind === 'opportunity' ? '✨ ' : ''}{n.body}</p>
+                {n.kind === 'opportunity' && <p className="tiny">Van škole · odgovara tvojim oznakama</p>}
                 <p className="tiny">{fmtAgo(n.created_at)}</p>
               </div>
             ))}

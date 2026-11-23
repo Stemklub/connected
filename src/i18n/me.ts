@@ -33,3 +33,13 @@ export function fmtAgo(iso: string): string {
   const d = Math.floor(s / 86400)
   return d === 1 ? 'juče' : `prije ${d} dana`
 }
+
+import type { OpportunityKind } from '../data/types'
+export const OPP_KIND: Record<OpportunityKind, { label: string; icon: string }> = {
+  takmicenje: { label: 'Takmičenje', icon: '🏆' },
+  hakaton: { label: 'Hakaton', icon: '💡' },
+  radionica: { label: 'Radionica', icon: '🛠️' },
+  predavanje: { label: 'Predavanje', icon: '🎤' },
+  konkurs: { label: 'Konkurs', icon: '📝' },
+  volontiranje: { label: 'Volontiranje', icon: '🤝' },
+}

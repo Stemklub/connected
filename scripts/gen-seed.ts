@@ -61,8 +61,35 @@ L('')
 L('revoke all on function private.load_seed() from public, anon, authenticated;')
 L('')
 L('select private.load_seed();')
+L('select private.load_seed_opportunities();')
 
 writeFileSync(new URL('../supabase/seed.sql', import.meta.url), lines.join('\n') + '\n')
+
+// Prilike van škole: posebna funkcija (poziva je i reset_demo).
+const O: string[] = []
+O.push('-- ═════════════════════════════════════════════════════════════')
+O.push('--  ConnectEd · 0009 · Seed prilika van škole (GENERISANO: npm run gen:seed)')
+O.push('--  Izmišljene prilike; organizatori su generički.')
+O.push('-- ═════════════════════════════════════════════════════════════')
+O.push('')
+O.push('create or replace function private.load_seed_opportunities()')
+O.push("returns void language plpgsql security definer set search_path = '' as $opp$")
+O.push('begin')
+O.push('  insert into public.opportunities (id, title, kind, organizer, deadline, place, audience, description, posted_by_label, created_at) values')
+O.push(SEED.opportunities.map((o) => `    (${q(o.id)}, ${q(o.title)}, ${q(o.kind)}, ${q(o.organizer)}, current_date + ${o.deadline}, ${q(o.place)}, ${q(o.audience)}, ${q(o.description)}, ${q(o.posted_by_label)}, ${ago(o.created)})`).join(',\n'))
+O.push('  on conflict (id) do nothing;')
+O.push('  insert into public.opportunity_tags (opportunity_id, tag)')
+O.push('  select v.o::uuid, v.t from (values')
+O.push(SEED.opportunities.flatMap((o) => o.tags.map((t) => `    (${q(o.id)}, ${q(t)})`)).join(',\n'))
+O.push('  ) as v(o, t) where exists (select 1 from public.tags where slug = v.t)')
+O.push('  on conflict do nothing;')
+O.push('end $opp$;')
+O.push('')
+O.push('revoke all on function private.load_seed_opportunities() from public, anon, authenticated;')
+O.push('')
+O.push('-- Postojeća baza (oznake već postoje): odmah učitaj prilike. Prazna baza: učitava ih seed.sql.')
+O.push('do $$ begin if exists (select 1 from public.tags) then perform private.load_seed_opportunities(); end if; end $$;')
+writeFileSync(new URL('../supabase/migrations/0009_seed_opportunities.sql', import.meta.url), O.join('\n') + '\n')
 writeFileSync(
   new URL('../src/data/seed.generated.ts', import.meta.url),
   '// GENERISANO: npm run gen:seed — ne mijenjati ručno.\n' +
@@ -72,5 +99,5 @@ writeFileSync(
 const grouped = new Set(SEED.members.map((m) => m.profile_id))
 console.log(
   `seed: ${SEED.profiles.length} učenika (${SEED.profiles.length - grouped.size} bez grupe), ` +
-    `${SEED.projects.length} projekata, ${SEED.codes.length} kodova`,
+    `${SEED.projects.length} projekata, ${SEED.opportunities.length} prilika, ${SEED.codes.length} kodova`,
 )

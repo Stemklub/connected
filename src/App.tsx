@@ -9,6 +9,7 @@ import { Tags } from './screens/Tags'
 import { Feed, MyGroups } from './screens/Feed'
 import { NewProject } from './screens/NewProject'
 import { Project } from './screens/Project'
+import { OpportunityPage } from './screens/Opportunity'
 import { Mentor } from './screens/Mentor'
 import { Profile } from './screens/Profile'
 
@@ -81,6 +82,7 @@ function Shell() {
         <Route path="/timovi" element={<MyGroups />} />
         <Route path="/novi" element={<NewProject />} />
         <Route path="/projekat/:id" element={<Project />} />
+        <Route path="/prilika/:id" element={<OpportunityPage />} />
         <Route path="/oznake" element={<Tags />} />
         <Route path="/profil" element={<Profile />} />
         <Route path="/mentor" element={me.role === 'student' ? <Navigate to="/" replace /> : <Mentor />} />

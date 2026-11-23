@@ -11,6 +11,9 @@ interface Ctx {
   emitLocal: (c: Change) => void
   toast: (msg: string, icon?: string) => void
   confetti: () => void
+  /** Dok je true, kartica poziva „Trebaš nam“ se ne prikazuje (npr. na „Van škole“). */
+  inviteHold: boolean
+  setInviteHold: (on: boolean) => void
 }
 
 const AppCtx = createContext<Ctx | null>(null)
@@ -25,6 +28,7 @@ export function AppProvider({ ds, initialMe, children }: { ds: DataSource; initi
   const listeners = useRef(new Set<Listener>())
   const [toastMsg, setToastMsg] = useState<{ msg: string; icon: string; k: number } | null>(null)
   const [burst, setBurst] = useState(0)
+  const [inviteHold, setInviteHold] = useState(false)
 
   const on = useCallback((l: Listener) => {
     listeners.current.add(l)
@@ -56,7 +60,7 @@ export function AppProvider({ ds, initialMe, children }: { ds: DataSource; initi
   }, [burst])
 
   return (
-    <AppCtx.Provider value={{ ds, me, setMe, on, emitLocal: (c) => fire(c), toast, confetti }}>
+    <AppCtx.Provider value={{ ds, me, setMe, on, emitLocal: (c) => fire(c), toast, confetti, inviteHold, setInviteHold }}>
       {children}
       {toastMsg && (
         <div className="toast" role="status" key={toastMsg.k} onClick={() => setToastMsg(null)}>

@@ -24,6 +24,38 @@ export interface InviteRef {
   reason_kind: TagKind
 }
 
+export type OpportunityKind = 'takmicenje' | 'hakaton' | 'radionica' | 'predavanje' | 'konkurs' | 'volontiranje'
+
+export interface Opportunity {
+  id: string
+  title: string
+  kind: OpportunityKind
+  organizer: string
+  deadline: string | null
+  place: string
+  audience: string
+  description: string
+  posted_by: string
+  created_at: string
+  tags: string[]
+  /** Oblast se poklapa sa oznakama učenika. */
+  for_me: boolean
+  /** „Zanima me — prijavi me“ (vidi samo učenik). */
+  interested: boolean
+  teams: { id: string; title: string; icon: string; free: number; leader_nick: string; is_member: boolean }[]
+}
+
+export interface NewOpportunity {
+  title: string
+  kind: OpportunityKind
+  organizer: string
+  deadline: string | null
+  place: string
+  audience: string
+  description: string
+  tags: string[]
+}
+
 export interface ProjectItem {
   id: string
   title: string
@@ -44,6 +76,7 @@ export interface ProjectItem {
   is_member: boolean
   is_leader: boolean
   invite: InviteRef | null
+  opportunity?: { id: string; title: string; kind: OpportunityKind } | null
 }
 
 export interface WallPost {
@@ -64,6 +97,7 @@ export interface AppNotification {
   id: string
   kind: string
   project_id: string | null
+  opportunity_id?: string | null
   body: string
   read: boolean
   created_at: string
@@ -92,9 +126,10 @@ export interface NewProject {
   spots: number
   tags: string[]
   icon: string
+  opportunity_id?: string | null
 }
 
-export type Change = 'invites' | 'notifications' | 'feed' | 'wall' | 'mentor' | 'reset'
+export type Change = 'invites' | 'notifications' | 'feed' | 'wall' | 'mentor' | 'reset' | 'opportunities'
 export type ChangeHandler = (c: Change, payload?: { project_id?: string }) => void
 
 export interface LocalAccount {
@@ -130,6 +165,10 @@ export interface DataSource {
   approveProject(id: string, approve: boolean): Promise<void>
   resolveHelp(id: string): Promise<void>
   resetDemo(): Promise<void>
+  getOpportunities(): Promise<Opportunity[]>
+  getOpportunity(id: string): Promise<Opportunity | null>
+  toggleOpportunityInterest(id: string): Promise<boolean>
+  createOpportunity(o: NewOpportunity): Promise<string>
   subscribe(me: Me, cb: ChangeHandler): () => void
   // samo offline
   listAccounts?(): LocalAccount[]

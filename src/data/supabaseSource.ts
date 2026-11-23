@@ -81,6 +81,8 @@ export const supabaseSource: DataSource = {
   createProject: (p) =>
     rpc('create_project', {
       p_title: p.title, p_goal: p.goal, p_deadline: p.deadline, p_spots: p.spots, p_tags: p.tags, p_icon: p.icon,
+      // Samo kad postoji: radi i sa bazom bez migracije 0008.
+      ...(p.opportunity_id ? { p_opportunity: p.opportunity_id } : {}),
     }),
   respondInvite: (id, accept) => rpc('respond_invite', { p_invite: id, p_accept: accept }),
   joinProject: (id) => rpc('join_project', { p_project: id }),
@@ -94,6 +96,14 @@ export const supabaseSource: DataSource = {
   approveProject: (id, approve) => rpc('approve_project', { p_project: id, p_approve: approve }),
   resolveHelp: (id) => rpc('resolve_help', { p_id: id }),
   resetDemo: () => rpc('reset_demo'),
+  getOpportunities: () => rpc('get_opportunities'),
+  getOpportunity: (id) => rpc('get_opportunity', { p_id: id }),
+  toggleOpportunityInterest: (id) => rpc('toggle_opportunity_interest', { p_id: id }),
+  createOpportunity: (o) =>
+    rpc('create_opportunity', {
+      p_title: o.title, p_kind: o.kind, p_organizer: o.organizer, p_deadline: o.deadline,
+      p_place: o.place, p_audience: o.audience, p_description: o.description, p_tags: o.tags,
+    }),
 
   // Realtime: bez pollinga. RLS određuje koje redove ko dobija.
   subscribe(me: Me, cb: ChangeHandler) {
@@ -109,6 +119,7 @@ export const supabaseSource: DataSource = {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wall_posts' }, (p) =>
         cb('wall', { project_id: (p.new as { project_id: string }).project_id }))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'help_signals' }, () => cb('mentor'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'opportunities' }, () => cb('opportunities'))
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'demo_meta' }, () => cb('reset'))
       .subscribe()
     return () => {

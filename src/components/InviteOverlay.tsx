@@ -22,14 +22,14 @@ function addSeen(uid: string, id: string) {
 }
 
 export function InviteOverlay() {
-  const { ds, me, on, toast, confetti } = useApp()
+  const { ds, me, on, toast, confetti, inviteHold } = useApp()
   const nav = useNavigate()
   const [inv, setInv] = useState<ProjectItem | null>(null)
   const [busy, setBusy] = useState(false)
   const showing = useRef<string | null>(null)
 
   const check = useCallback(async () => {
-    if (!me || me.role !== 'student' || !me.onboarded || showing.current) return
+    if (!me || me.role !== 'student' || !me.onboarded || showing.current || inviteHold) return
     try {
       const list = await ds.getMyInvites()
       const seen = getSeen(me.id)
@@ -46,7 +46,7 @@ export function InviteOverlay() {
     } catch {
       /* ignore */
     }
-  }, [ds, me])
+  }, [ds, me, inviteHold])
 
   useEffect(() => {
     void check()
@@ -55,7 +55,7 @@ export function InviteOverlay() {
     })
   }, [check, on])
 
-  if (!inv || !inv.invite || !me) return null
+  if (!inv || !inv.invite || !me || inviteHold) return null
   const close = () => {
     addSeen(me.id, inv.invite!.id)
     showing.current = null

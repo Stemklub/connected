@@ -9,15 +9,16 @@ import { CLASSES, TAGS } from '../config/school'
 import { SEED } from './seed.generated'
 import type {
   AppNotification, Change, ChangeHandler, DataSource, LocalAccount, Me, MentorDashboard,
-  ProjectDetail, ProjectItem, Role,
+  Opportunity, OpportunityKind, ProjectDetail, ProjectItem, Role,
 } from './types'
 
-const KEY = 'ce-offline-v2'
+const KEY = 'ce-offline-v3'
 const DAY = 86400_000
 const OFFLINE_MENTOR_ID = 'c0000000-0000-4000-8000-000000000001'
 
 interface OProfile { id: string; nick: string; nick_norm: string; role: Role; class_id: string | null; onboarded: boolean; is_seed: boolean; created_at: string }
-interface OProject { id: string; title: string; goal: string; deadline: string | null; spots: number; icon: string; status: ProjectItem['status']; leader_id: string; result_text: string | null; created_at: string; approved_at: string | null; completed_at: string | null }
+interface OProject { id: string; title: string; goal: string; deadline: string | null; spots: number; icon: string; status: ProjectItem['status']; leader_id: string; result_text: string | null; created_at: string; approved_at: string | null; completed_at: string | null; opportunity_id?: string | null }
+interface OOpportunity { id: string; title: string; kind: OpportunityKind; organizer: string; deadline: string | null; place: string; audience: string; description: string; posted_by: string | null; posted_by_label: string; created_at: string }
 interface OState {
   codes: { code: string; role: Role; class_id: string | null; used_at: string | null }[]
   accounts: { profile_id: string; password: string }[]
@@ -29,9 +30,12 @@ interface OState {
   members: { project_id: string; profile_id: string; joined_at: string; left_at: string | null }[]
   invites: { id: string; project_id: string; profile_id: string; reason_tag: string; reason_kind: TagKind; status: string; created_at: string; responded_at: string | null }[]
   wall: { id: string; project_id: string; author_id: string | null; kind: 'post' | 'system'; body: string; created_at: string }[]
-  notifications: { id: string; profile_id: string; kind: string; project_id: string | null; body: string; read_at: string | null; created_at: string }[]
+  notifications: { id: string; profile_id: string; kind: string; project_id: string | null; opportunity_id?: string | null; body: string; read_at: string | null; created_at: string }[]
   help: { id: string; profile_id: string; note: string | null; created_at: string; handled_at: string | null }[]
   firstGroupEvents: { profile_id: string; at: string }[]
+  opportunities: OOpportunity[]
+  opportunityTags: { opportunity_id: string; tag: string }[]
+  interest: { opportunity_id: string; profile_id: string }[]
 }
 
 const now = () => new Date().toISOString()
@@ -68,6 +72,12 @@ function seedState(keep?: OState): OState {
     notifications: [],
     help: [],
     firstGroupEvents: SEED.firstGroupEvents.map((e) => ({ profile_id: e.profile_id, at: ago(e.ago) })),
+    opportunities: SEED.opportunities.map((o) => ({
+      id: o.id, title: o.title, kind: o.kind, organizer: o.organizer, deadline: dateIn(o.deadline), place: o.place,
+      audience: o.audience, description: o.description, posted_by: null, posted_by_label: o.posted_by_label, created_at: ago(o.created),
+    })),
+    opportunityTags: SEED.opportunities.flatMap((o) => o.tags.map((tag) => ({ opportunity_id: o.id, tag }))),
+    interest: [],
   }
   if (keep) {
     // Reset čuva mentorske/pedagoške naloge napravljene na ovom uređaju (kao online).
@@ -110,7 +120,7 @@ if (typeof window !== 'undefined') {
   window.addEventListener('storage', (e) => {
     if (e.key !== KEY) return
     state = load()
-    emit('feed', 'invites', 'notifications', 'wall', 'mentor')
+    emit('feed', 'invites', 'notifications', 'wall', 'mentor', 'opportunities')
   })
 }
 
@@ -165,7 +175,42 @@ function projectJson(p: OProject, meId: string): ProjectItem {
     is_member: activeMember(p.id, meId),
     is_leader: p.leader_id === meId,
     invite: inv ? { id: inv.id, reason_tag: inv.reason_tag, reason_kind: inv.reason_kind } : null,
+    opportunity: (() => {
+      const o = p.opportunity_id ? state.opportunities.find((x) => x.id === p.opportunity_id) : undefined
+      return o ? { id: o.id, title: o.title, kind: o.kind } : null
+    })(),
   }
+}
+
+// ─── Prilike van škole (prati 0008_opportunities.sql) ───────
+const today = () => new Date().toISOString().slice(0, 10)
+const oppTags = (id: string) => state.opportunityTags.filter((t) => t.opportunity_id === id).map((t) => t.tag).sort((a, b) => tagSort(a) - tagSort(b))
+const oppForMe = (id: string, meId: string) => {
+  const mine = new Set(state.profileTags.filter((t) => t.profile_id === meId).map((t) => t.tag))
+  return oppTags(id).some((t) => mine.has(t))
+}
+function opportunityJson(o: OOpportunity, meId: string): Opportunity {
+  return {
+    id: o.id, title: o.title, kind: o.kind, organizer: o.organizer, deadline: o.deadline, place: o.place,
+    audience: o.audience, description: o.description, created_at: o.created_at,
+    posted_by: (o.posted_by ? prof(o.posted_by)?.nick : null) || o.posted_by_label || 'Škola',
+    tags: oppTags(o.id),
+    for_me: oppForMe(o.id, meId),
+    interested: state.interest.some((i) => i.opportunity_id === o.id && i.profile_id === meId),
+    teams: state.projects
+      .filter((p) => p.opportunity_id === o.id && p.status === 'open')
+      .sort((a, b) => (a.approved_at ?? '').localeCompare(b.approved_at ?? ''))
+      .map((p) => ({ id: p.id, title: p.title, icon: p.icon, free: freeSpots(mstate(), p.id), leader_nick: prof(p.leader_id)?.nick ?? '', is_member: activeMember(p.id, meId) })),
+  }
+}
+function notifyOpportunities(profileId: string) {
+  const list = state.opportunities
+    .filter((o) => (!o.deadline || o.deadline >= today()) && oppForMe(o.id, profileId))
+    .filter((o) => !state.notifications.some((n) => n.profile_id === profileId && n.opportunity_id === o.id))
+    .sort((a, b) => (a.deadline ?? '9999').localeCompare(b.deadline ?? '9999') || a.created_at.localeCompare(b.created_at))
+    .slice(0, 3)
+  for (const o of list)
+    state.notifications.push({ id: uuid(), profile_id: profileId, kind: 'opportunity', project_id: null, opportunity_id: o.id, body: `Prilika za tebe: „${o.title}“`, read_at: null, created_at: now() })
 }
 const sortFeed = (a: OProject, b: OProject) =>
   Number(a.status === 'done') - Number(b.status === 'done') ||
@@ -316,8 +361,11 @@ export const offlineSource: DataSource = {
             state.profileTags.push({ profile_id: u.id, tag: t.tag, kind: t.kind })
           }
         u.onboarded = true
-        if (u.role === 'student') runProfileMatching(u.id) // trigger „novi nalog“
-      }, 'invites'),
+        if (u.role === 'student') {
+          runProfileMatching(u.id) // trigger „novi nalog“
+          notifyOpportunities(u.id)
+        }
+      }, 'invites', 'notifications', 'opportunities'),
     ),
 
   getFeed: () =>
@@ -377,11 +425,12 @@ export const offlineSource: DataSource = {
         if (state.projects.filter((p) => p.leader_id === u.id && p.status === 'pending').length >= 3)
           throw new Error('Već imaš 3 projekta koja čekaju odobrenje.')
         if (!np.tags.length) throw new Error('Izaberi bar jednu oznaku.')
+        if (np.opportunity_id && !state.opportunities.some((o) => o.id === np.opportunity_id)) throw new Error('Prilika nije pronađena.')
         const id = uuid()
         state.projects.push({
           id, title: np.title.trim(), goal: np.goal.trim(), deadline: np.deadline, spots: np.spots || 2,
           icon: np.icon || '✨', status: 'pending', leader_id: u.id, result_text: null, created_at: now(),
-          approved_at: null, completed_at: null,
+          approved_at: null, completed_at: null, opportunity_id: np.opportunity_id ?? null,
         })
         for (const tag of new Set(np.tags)) state.projectTags.push({ project_id: id, tag })
         return id
@@ -463,7 +512,7 @@ export const offlineSource: DataSource = {
         .filter((n) => n.profile_id === u.id)
         .sort((a, b) => b.created_at.localeCompare(a.created_at))
         .slice(0, 30)
-        .map((n) => ({ id: n.id, kind: n.kind, project_id: n.project_id, body: n.body, read: !!n.read_at, created_at: n.created_at }))
+        .map((n) => ({ id: n.id, kind: n.kind, project_id: n.project_id, opportunity_id: n.opportunity_id ?? null, body: n.body, read: !!n.read_at, created_at: n.created_at }))
     }),
 
   markNotificationsRead: () =>
@@ -535,6 +584,57 @@ export const offlineSource: DataSource = {
         requireStaff()
         state = seedState(state)
       }, 'reset'),
+    ),
+
+  getOpportunities: () =>
+    run(() => {
+      const u = me()
+      return state.opportunities
+        .filter((o) => !o.deadline || o.deadline >= today())
+        .map((o) => opportunityJson(o, u.id))
+        .sort((a, b) => Number(b.for_me) - Number(a.for_me) || (a.deadline ?? '9999').localeCompare(b.deadline ?? '9999') || b.created_at.localeCompare(a.created_at))
+    }),
+
+  getOpportunity: (id) =>
+    run(() => {
+      const u = me()
+      const o = state.opportunities.find((x) => x.id === id)
+      return o ? opportunityJson(o, u.id) : null
+    }),
+
+  toggleOpportunityInterest: (id) =>
+    run(() =>
+      mutate(() => {
+        const u = me()
+        if (u.role !== 'student') throw new Error('Prijavljuju se učenici.')
+        if (!state.opportunities.some((o) => o.id === id)) throw new Error('Prilika nije pronađena.')
+        const i = state.interest.findIndex((x) => x.opportunity_id === id && x.profile_id === u.id)
+        if (i >= 0) {
+          state.interest.splice(i, 1)
+          return false
+        }
+        state.interest.push({ opportunity_id: id, profile_id: u.id })
+        return true
+      }, 'opportunities'),
+    ),
+
+  createOpportunity: (no) =>
+    run(() =>
+      mutate(() => {
+        const u = requireStaff()
+        if (!no.tags.length) throw new Error('Izaberi bar jednu oblast.')
+        const id = uuid()
+        state.opportunities.push({
+          id, title: no.title.trim(), kind: no.kind, organizer: no.organizer.trim(), deadline: no.deadline,
+          place: no.place.trim(), audience: no.audience.trim(), description: no.description.trim(),
+          posted_by: u.id, posted_by_label: '', created_at: now(),
+        })
+        for (const tag of new Set(no.tags)) state.opportunityTags.push({ opportunity_id: id, tag })
+        for (const p of state.profiles)
+          if (p.role === 'student' && p.onboarded && oppForMe(id, p.id))
+            state.notifications.push({ id: uuid(), profile_id: p.id, kind: 'opportunity', project_id: null, opportunity_id: id, body: `Prilika za tebe: „${no.title.trim()}“`, read_at: null, created_at: now() })
+        return id
+      }, 'opportunities', 'notifications'),
     ),
 
   subscribe(_me, cb) {

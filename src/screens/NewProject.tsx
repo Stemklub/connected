@@ -1,9 +1,11 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useApp } from '../state'
 import { TAGS } from '../config/school'
+import type { Opportunity } from '../data/types'
+import { OPP_KIND } from '../i18n/me'
 
-const ICONS = ['✨', '🎙️', '🎨', '🧁', '🧭', '🎵', '🥁', '📷', '🎬', '⚽', '💼', '🍹', '💃', '💻', '🎮', '✍️']
+const ICONS = ['✨', '🎙️', '🎨', '🧁', '🧭', '🎵', '🥁', '📷', '🎬', '⚽', '💼', '🍹', '💃', '💻', '🎮', '✍️', '🏆', '💡', '🛠️', '🤝']
 
 export function NewProject() {
   const { ds, toast } = useApp()
@@ -16,6 +18,24 @@ export function NewProject() {
   const [tags, setTags] = useState<string[]>([])
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [params] = useSearchParams()
+  const oppId = params.get('prilika')
+  const [opp, setOpp] = useState<Opportunity | null>(null)
+
+  // „Ko ide sa mnom? Napravi tim“: obrazac je popunjen iz prilike.
+  useEffect(() => {
+    if (!oppId) return
+    ds.getOpportunity(oppId).then((o) => {
+      if (!o) return
+      setOpp(o)
+      setTitle(`Tim za: ${o.title}`.slice(0, 80))
+      setGoal(`Prijavljujemo se zajedno: ${OPP_KIND[o.kind].label.toLowerCase()} „${o.title}“ (${o.organizer}).`.slice(0, 300))
+      if (o.deadline) setDeadline(o.deadline)
+      setTags(o.tags)
+      setIcon(OPP_KIND[o.kind].icon)
+      setSpots(3)
+    }, () => {})
+  }, [ds, oppId])
 
   const ok = title.trim().length >= 3 && goal.trim().length >= 1 && tags.length > 0
   const submit = async (e: React.FormEvent) => {
@@ -23,8 +43,8 @@ export function NewProject() {
     setBusy(true)
     setErr(null)
     try {
-      await ds.createProject({ title, goal, deadline: deadline || null, spots, icon, tags })
-      toast('Poslato mentoru na odobrenje ✨', '📨')
+      await ds.createProject({ title, goal, deadline: deadline || null, spots, icon, tags, opportunity_id: opp?.id ?? null })
+      toast(opp ? 'Tim je poslat mentoru na odobrenje ✨' : 'Poslato mentoru na odobrenje ✨', '📨')
       nav('/timovi', { replace: true })
     } catch (e) {
       setErr((e as Error).message)
@@ -35,7 +55,8 @@ export function NewProject() {
 
   return (
     <form className="page" onSubmit={submit}>
-      <h1>Pokreni projekat</h1>
+      <h1>{opp ? 'Napravi tim za priliku' : 'Pokreni projekat'}</h1>
+      {opp && <span className="badge forme" style={{ alignSelf: 'flex-start' }} data-testid="np-opportunity">{OPP_KIND[opp.kind].icon} {opp.title}</span>}
       <p className="muted">Mentor ga odobrava jednim dodirom. Onda šaljemo pozive onima koji to vole i znaju.</p>
       <div className="field">
         <label htmlFor="np-title">Naziv</label>

@@ -446,3 +446,4 @@ end $seed$;
 revoke all on function private.load_seed() from public, anon, authenticated;
 
 select private.load_seed();
+select private.load_seed_opportunities();

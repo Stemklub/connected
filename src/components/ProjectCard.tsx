@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import type { ProjectItem } from '../data/types'
-import { STATUS_LABEL, fmtAgo, tagLabel } from '../i18n/me'
+import { OPP_KIND, STATUS_LABEL, fmtAgo, tagLabel } from '../i18n/me'
 import { Icon } from './Icon'
 
 export function ProjectCard({ p, onJoin }: { p: ProjectItem; onJoin?: (p: ProjectItem) => void }) {
@@ -33,6 +33,7 @@ export function ProjectCard({ p, onJoin }: { p: ProjectItem; onJoin?: (p: Projec
           </div>
           <div className="row wrap" style={{ marginTop: 8, gap: 6 }}>
             {p.invite && <span className="badge grad">✨ Trebaš nam</span>}
+            {p.opportunity && <span className="badge grey">{OPP_KIND[p.opportunity.kind].icon} Van škole</span>}
             {p.is_member && p.status === 'open' && <span className="badge green">Tvoj tim</span>}
             {p.status === 'pending' && <span className="badge amber">Čeka mentora</span>}
             {p.status === 'rejected' && <span className="badge grey">Nije odobreno</span>}

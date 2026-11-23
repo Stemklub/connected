@@ -17,7 +17,7 @@ export default defineConfig({
   reporter: [['list']],
   use: { ...devices['Pixel 7'], trace: 'off' },
   projects: [
-    { name: 'offline', testMatch: /offline\.spec\.ts/, use: { baseURL: 'http://localhost:4173/connected/' } },
+    { name: 'offline', testMatch: /offline.*\.spec\.ts/, use: { baseURL: 'http://localhost:4173/connected/' } },
     ...(online ? [{ name: 'online', testMatch: /online\.spec\.ts/, use: { baseURL: deployed ?? 'http://localhost:4174/connected/' } }] : []),
   ],
   webServer: [

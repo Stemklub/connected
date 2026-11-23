@@ -20,6 +20,12 @@ Uključenost se dešava kroz ono što učenik **voli i zna**, a ne kroz etiketu.
 3. **Lični poziv:** stiže uživo: „**Trebaš nam.** Podcast traži montažera.“ Razlog je uvijek talenat ili interesovanje. Dugmad su „Pridružujem se“ i „Ne sada“. „Ne sada“ nema posljedica i ne pita za razlog.
 4. **Tim:** cilj, rok, članovi i grupni zid (vidi ga i mentor). Nema privatnih četova.
 5. **Rezultat:** tim označi projekat kao završen, a rezultat vide svi u feedu.
+6. **Prilike van škole:** takmičenja, hakatoni, radionice, predavanja, konkursi i volontiranje.
+   - Kartica **„Van škole“** u feedu: sve prilike, a prve su one koje odgovaraju oznakama učenika (značka **„Za tebe“**).
+   - Kartica **„Sve“**: na vrhu „Van škole · za tebe“ (do 2 prilike) i link „Sve prilike“, ispod „U školi“.
+   - Detalj prilike: rok, mjesto, za koga, opis, ko je objavio, i dugmad **„Zanima me — prijavi me“** (vidi samo učenik) i **„Ko ide sa mnom? Napravi tim“** (tim ide mentoru na odobrenje, zatim kroz isto spajanje).
+   - Zvonce javlja prilike koje odgovaraju učeniku. Mentor objavljuje nove prilike na ekranu „Mentor“.
+   - Na kartici „Van škole“ i u detalju prilike ne iskače poziv „Trebaš nam“.
 
 Spajanje tiho daje prednost učenicima koji trenutno nisu ni u jednoj grupi. To pravilo se ne vidi u interfejsu ni u odgovorima API-ja.
 
@@ -35,6 +41,7 @@ Spajanje tiho daje prednost učenicima koji trenutno nisu ni u jednoj grupi. To 
 
 ```
 supabase/migrations/   0001 šema · 0002 RLS · 0003 spajanje · 0004 RPC · 0005 realtime
+                       0006–0007 ispravke i kodovi · 0008 prilike van škole · 0009 seed prilika (generisano)
 supabase/seed.sql      izmišljeni učenici, projekti, kodovi (generisano)
 supabase/setup.sql     sve gore u jednom fajlu, za SQL Editor (generisano)
 src/config/school.ts   škola, smjerovi, odjeljenja, oznake  ← ovdje mijenjate
@@ -74,7 +81,7 @@ Pokreće se triggerom kad učenik sačuva oznake (novi nalog), kad mentor odobri
 2. Sačekajte da se projekat podigne (1–2 min).
 
 ### 2. Baza: migracije i seed
-> Baza postavljena ranijom verzijom: pokrenite i `supabase/migrations/0006_fix_reset.sql` i `0007_simple_codes.sql` (u `setup.sql` su već uključeni).
+> Baza postavljena ranijom verzijom: pokrenite redom fajlove koji nedostaju iz `supabase/migrations/` (`0006`, `0007`, `0008`, `0009`). U `setup.sql` su već uključeni.
 
 1. U projektu otvorite **SQL Editor** → **New query**.
 2. Zalijepite **cijeli** sadržaj fajla [`supabase/setup.sql`](supabase/setup.sql) i kliknite **Run**. Pokreće se jednom, na praznom projektu.

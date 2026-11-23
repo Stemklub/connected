@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApp, useLive } from '../state'
 import { fmtAgo, tagLabel } from '../i18n/me'
-import type { Metrics } from '../data/types'
+import type { Metrics, NewOpportunity, OpportunityKind } from '../data/types'
+import { TAGS } from '../config/school'
+import { OPP_KIND } from '../i18n/me'
 
 export function Mentor() {
   const { ds, toast } = useApp()
@@ -33,6 +35,8 @@ export function Mentor() {
       <h1>Mentor</h1>
       <MetricsGrid m={data.metrics} />
       <p className="tiny">Samo zbirni brojevi. Bez imena i bez spiskova učenika.</p>
+
+      <PublishOpportunity />
 
       <div className="section-title"><h2>Na odobrenju</h2><span className="badge">{data.pending.length}</span></div>
       {data.pending.length === 0 && <p className="tiny">Nema projekata koji čekaju.</p>}
@@ -120,6 +124,82 @@ function groupCodes(codes: { code: string; role: string; class_label: string | n
     m.set(k, [...(m.get(k) ?? []), c.code])
   }
   return [...m.entries()]
+}
+
+function PublishOpportunity() {
+  const { ds, toast, emitLocal } = useApp()
+  const empty: NewOpportunity = { title: '', kind: 'radionica', organizer: '', deadline: null, place: '', audience: '', description: '', tags: [] }
+  const [open, setOpen] = useState(false)
+  const [o, setO] = useState<NewOpportunity>(empty)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const set = <K extends keyof NewOpportunity>(k: K, v: NewOpportunity[K]) => setO((x) => ({ ...x, [k]: v }))
+  const ok = o.title.trim().length >= 3 && o.organizer.trim() && o.tags.length > 0
+
+  if (!open)
+    return (
+      <button className="btn block soft" onClick={() => setOpen(true)} data-testid="publish-opp-open">🌍 Objavi priliku van škole</button>
+    )
+  return (
+    <form
+      className="card stack"
+      data-testid="publish-opp"
+      onSubmit={async (e) => {
+        e.preventDefault()
+        setBusy(true)
+        setErr(null)
+        try {
+          await ds.createOpportunity(o)
+          toast('Prilika je objavljena. Učenici kojima odgovara dobili su obavještenje.', '🌍')
+          emitLocal('opportunities')
+          setO(empty)
+          setOpen(false)
+        } catch (e) {
+          setErr((e as Error).message)
+        } finally {
+          setBusy(false)
+        }
+      }}
+    >
+      <h3>Objavi priliku van škole</h3>
+      <div className="field"><label htmlFor="op-t">Naziv</label>
+        <input id="op-t" className="input" value={o.title} maxLength={100} placeholder="npr. Hakaton za srednjoškolce" onChange={(e) => set('title', e.target.value)} /></div>
+      <div className="field"><label>Vrsta</label>
+        <div className="chips">
+          {(Object.keys(OPP_KIND) as OpportunityKind[]).map((k) => (
+            <button type="button" key={k} className={`chip small ${o.kind === k ? 'on' : ''}`} onClick={() => set('kind', k)}>{OPP_KIND[k].icon} {OPP_KIND[k].label}</button>
+          ))}
+        </div></div>
+      <div className="field"><label htmlFor="op-o">Organizator</label>
+        <input id="op-o" className="input" value={o.organizer} maxLength={100} onChange={(e) => set('organizer', e.target.value)} /></div>
+      <div className="row" style={{ gap: 10 }}>
+        <div className="field" style={{ flex: 1 }}><label htmlFor="op-d">Rok</label>
+          <input id="op-d" className="input" type="date" value={o.deadline ?? ''} onChange={(e) => set('deadline', e.target.value || null)} /></div>
+        <div className="field" style={{ flex: 1 }}><label htmlFor="op-p">Mjesto</label>
+          <input id="op-p" className="input" value={o.place} maxLength={100} placeholder="Bar / Online" onChange={(e) => set('place', e.target.value)} /></div>
+      </div>
+      <div className="field"><label htmlFor="op-a">Za koga</label>
+        <input id="op-a" className="input" value={o.audience} maxLength={120} placeholder="npr. II–IV razred" onChange={(e) => set('audience', e.target.value)} /></div>
+      <div className="field"><label htmlFor="op-desc">Opis</label>
+        <textarea id="op-desc" className="input" value={o.description} maxLength={800} onChange={(e) => set('description', e.target.value)} /></div>
+      <div className="field"><label>Oblast (oznake)</label>
+        <div className="chips">
+          {TAGS.map((t) => {
+            const on = o.tags.includes(t.slug)
+            return (
+              <button type="button" key={t.slug} className={`chip small ${on ? 'on' : ''}`} aria-pressed={on}
+                onClick={() => set('tags', on ? o.tags.filter((x) => x !== t.slug) : [...o.tags, t.slug])}>{t.icon} {t.label}</button>
+            )
+          })}
+        </div></div>
+      {err && <div className="error-box">{err}</div>}
+      <div className="row">
+        <button className="btn small" style={{ flex: 1 }} disabled={!ok || busy}>Objavi</button>
+        <button type="button" className="btn small ghost" onClick={() => setOpen(false)}>Odustani</button>
+      </div>
+      <p className="tiny">Objavio/la: tvoj nik. Učenici sa poklapajućim oznakama dobijaju obavještenje.</p>
+    </form>
+  )
 }
 
 function MetricsGrid({ m }: { m: Metrics }) {

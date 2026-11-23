@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useApp, useLive } from '../state'
 import { Icon } from '../components/Icon'
-import { STATUS_LABEL, fmtAgo, fmtDate, inviteReason, tagIcon, tagLabel } from '../i18n/me'
+import { OPP_KIND, STATUS_LABEL, fmtAgo, fmtDate, inviteReason, tagIcon, tagLabel } from '../i18n/me'
 
 const initials = (n: string) => n.replace(/[^A-Za-zČĆŠŽĐčćšžđ0-9]/g, '').slice(0, 2).toUpperCase() || '🙂'
 
@@ -72,6 +72,17 @@ export function Project() {
         <span className={`badge ${p.status === 'done' ? 'green' : p.status === 'open' ? '' : 'amber'}`}>{STATUS_LABEL[p.status]}</span>
         {p.tags.map((t) => <span key={t} className="badge grey">{tagIcon(t)} {tagLabel(t)}</span>)}
       </div>
+
+      {p.opportunity && (
+        <div className="card tap row" onClick={() => nav(`/prilika/${p.opportunity!.id}`)} data-testid="project-opportunity" style={{ background: 'var(--violet-soft)', boxShadow: 'none' }}>
+          <span style={{ fontSize: 24 }}>{OPP_KIND[p.opportunity.kind].icon}</span>
+          <div style={{ flex: 1 }}>
+            <div className="tiny">Tim za priliku van škole</div>
+            <b className="small">{p.opportunity.title}</b>
+          </div>
+          <Icon name="chev" size={18} />
+        </div>
+      )}
 
       <div className="card stack">
         <p><b>Cilj:</b> {p.goal}</p>

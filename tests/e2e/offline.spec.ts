@@ -7,6 +7,7 @@ const TITLE = 'Podcast traži montažera'
 async function switchTo(page: Page, nick: string) {
   await page.getByTestId('switch-account').click()
   await page.getByTestId('account-menu').getByRole('button', { name: new RegExp(nick) }).click()
+  await page.waitForTimeout(400) // prebacivanje naloga mijenja ekran sa kratkim zakašnjenjem
 }
 
 test('offline: A pokreće projekat → mentor odobrava → B prihvata poziv → A vidi → reset', async ({ page }) => {

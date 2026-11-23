@@ -11,6 +11,11 @@ export interface SeedProject {
   leader_id: string; tags: string[]; created: number; approved: number; completed?: number
   deadline: number; result_text?: string
 }
+export type OpportunityKind = 'takmicenje' | 'hakaton' | 'radionica' | 'predavanje' | 'konkurs' | 'volontiranje'
+export interface SeedOpportunity {
+  id: string; title: string; kind: OpportunityKind; organizer: string; deadline: number
+  place: string; audience: string; description: string; tags: string[]; posted_by_label: string; created: number
+}
 export interface SeedData {
   codes: { code: string; role: 'student' | 'mentor' | 'pedagog'; class_id: string | null }[]
   profiles: SeedProfile[]
@@ -18,6 +23,7 @@ export interface SeedData {
   members: { project_id: string; profile_id: string; joined: number }[]
   wall: { project_id: string; author_id: string | null; kind: 'post' | 'system'; body: string; ago: number }[]
   firstGroupEvents: { profile_id: string; ago: number }[]
+  opportunities: SeedOpportunity[]
 }
 // Vrijeme: `created`, `approved`, `completed`, `joined`, `ago` = prije koliko DANA; `deadline` = za koliko dana.
 
@@ -160,4 +166,17 @@ for (const c of CLASSES)
 for (let k = 1; k <= 5; k++) codes.push({ code: `900${k}`, role: 'mentor', class_id: null })
 for (let k = 1; k <= 2; k++) codes.push({ code: `800${k}`, role: 'pedagog', class_id: null })
 
-export const SEED: SeedData = { codes, profiles, projects, members, wall, firstGroupEvents }
+// ─── Prilike van škole (izmišljene; organizatori su generički) ───
+const opp = (n: number) => `d0000000-0000-4000-8000-${n.toString().padStart(12, '0')}`
+const opportunities: SeedOpportunity[] = [
+  { id: opp(1), kind: 'hakaton', title: 'Hakaton „Turizam sjutra“ za srednjoškolce', organizer: 'Inovacioni centar za mlade', deadline: 18, place: 'Podgorica', audience: 'II–IV razred, timovi od 3 do 5', description: 'Dva dana smišljanja digitalnih rješenja za lokalni turizam. Mentori iz IT firmi i hotela, hrana i majice obezbijeđeni. Ne moraš znati programiranje: trebaju i ljudi za ideju, dizajn i prezentaciju.', tags: ['programiranje', 'turizam', 'preduzetnistvo', 'crtanje'], posted_by_label: 'Mentorka sekcije', created: 3 },
+  { id: opp(2), kind: 'takmicenje', title: 'Regionalno takmičenje mladih kuvara i poslastičara', organizer: 'Udruženje kuvara primorja', deadline: 14, place: 'Budva', audience: 'III i IV razred, smjer kuvar', description: 'Takmičenje u pripremi predjela i deserta od lokalnih namirnica. Najbolji dobijaju praksu u hotelima sa pet zvjezdica.', tags: ['kuvanje', 'poslasticarstvo'], posted_by_label: 'Profesor praktične nastave', created: 5 },
+  { id: opp(3), kind: 'radionica', title: 'Radionica: barmenstvo i latte art', organizer: 'Akademija za ugostiteljstvo', deadline: 7, place: 'Bar, školska kuhinja', audience: 'Svi razredi, 12 mjesta', description: 'Tri sata prakse: klasični mocktaili, aparat za espresso i crtanje u mlijeku. Dobijaš potvrdu o učešću.', tags: ['barmen'], posted_by_label: 'Mentorka sekcije', created: 2 },
+  { id: opp(4), kind: 'predavanje', title: 'Predavanje: kako do prvog posla u turizmu', organizer: 'Klub mladih turističkih radnika', deadline: 5, place: 'Online', audience: 'Svi razredi', description: 'Mladi recepcioneri, vodiči i menadžeri pričaju kako su počeli, šta poslodavci traže i kako se piše prva radna biografija.', tags: ['turizam', 'jezici', 'preduzetnistvo'], posted_by_label: 'Školski pedagog', created: 1 },
+  { id: opp(5), kind: 'konkurs', title: 'Foto i video konkurs „Moj grad u kadru“', organizer: 'Opštinski centar za kulturu', deadline: 25, place: 'Online prijava', audience: 'Učenici srednjih škola', description: 'Pošalji do tri fotografije ili video do 60 sekundi o mjestu u kojem živiš. Najbolji radovi idu na izložbu u gradskoj galeriji.', tags: ['fotografija', 'video', 'crtanje'], posted_by_label: 'Učenički parlament', created: 4 },
+  { id: opp(6), kind: 'volontiranje', title: 'Volonteri za ljetnji festival na Primorju', organizer: 'Festivalski odbor', deadline: 30, place: 'Bar', audience: 'Od 16 godina', description: 'Doček gostiju, info-pult na engleskom i pomoć bendovima iza bine. Volonterska potvrda i festivalska majica.', tags: ['jezici', 'turizam', 'muzika'], posted_by_label: 'Učenički parlament', created: 6 },
+  { id: opp(7), kind: 'konkurs', title: 'Konkurs za najbolju biznis ideju mladih', organizer: 'Fond za podršku mladim preduzetnicima', deadline: 40, place: 'Online prijava', audience: 'Učenici i timovi do 4 člana', description: 'Opiši ideju na dvije strane: problem, rješenje, kupci i troškovi. Finalisti dobijaju mentorstvo i novčanu nagradu za početak.', tags: ['preduzetnistvo', 'pisanje'], posted_by_label: 'Profesorka ekonomije', created: 8 },
+  { id: opp(8), kind: 'radionica', title: 'Radionica: podcast i video za početnike', organizer: 'Medijski centar za mlade', deadline: 12, place: 'Podgorica', audience: 'Svi razredi', description: 'Kako snimiti razgovor telefonom, očistiti zvuk i montirati kratak video. Ponesi telefon i slušalice.', tags: ['podcast', 'video', 'pisanje'], posted_by_label: 'Mentorka sekcije', created: 2 },
+]
+
+export const SEED: SeedData = { codes, profiles, projects, members, wall, firstGroupEvents, opportunities }
