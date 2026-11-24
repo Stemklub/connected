@@ -47,6 +47,14 @@ test('online: dva telefona + mentor, uživo preko Realtime', async ({ browser })
   const a = await phone(browser)
   await register(a, '3201', 'ucenicaA', ['podcast:znam', 'pisanje'])
   await dismissInvitesExcept(a)
+  // Prilike van škole: A zna podcast → „Van škole · za tebe“ na vrhu feeda
+  await expect(a.getByTestId('out-for-you').getByRole('heading', { name: 'Van škole · za tebe' })).toBeVisible()
+  await expect(a.getByTestId('out-for-you').getByTestId('for-me').first()).toBeVisible()
+  await a.getByTestId('all-opps').click()
+  await expect(a.getByTestId('opportunity-card')).toHaveCount(8)
+  await a.getByTestId('opportunity-card').filter({ hasText: 'podcast i video' }).click()
+  await a.getByTestId('opp-interest').click()
+  await expect(a.getByTestId('opp-interest')).toHaveText(/Prijavljen\/a · poništi/)
   await createProject(a, TITLE, 'Druga epizoda školskog podcasta.', ['video', 'podcast'])
 
   // Mentor vidi projekat uživo (Realtime) i odobrava
