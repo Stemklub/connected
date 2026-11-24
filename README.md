@@ -29,6 +29,19 @@ Uključenost se dešava kroz ono što učenik **voli i zna**, a ne kroz etiketu.
 
 Spajanje tiho daje prednost učenicima koji trenutno nisu ni u jednoj grupi. To pravilo se ne vidi u interfejsu ni u odgovorima API-ja.
 
+## Demo snimci
+
+Uspravni snimci ekrana telefona, bez zvuka (fascikla [`docs/video/`](docs/video/)):
+
+| Snimak | Trajanje | Šta prikazuje |
+|---|---|---|
+| [`ConnectEd-demo-10s.mp4`](docs/video/ConnectEd-demo-10s.mp4) | 10 s | Učenica bira šta zna → poziv „Trebaš nam.“ → tim i zid |
+| [`ConnectEd-demo-uloge.mp4`](docs/video/ConnectEd-demo-uloge.mp4) | 26 s | Sa natpisima: mentor odobrava → učenica dobija poziv → vođa tima vidi novu članicu → mentor vidi napredak (zbirno) |
+
+Snimljeni su u offline režimu sa izmišljenim nikovima, prije dodavanja „Prilika van škole“.
+
+---
+
 ## Arhitektura
 
 | Dio | Tehnologija |
