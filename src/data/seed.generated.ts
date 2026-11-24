@@ -849,7 +849,7 @@ export const SEED: SeedData = {
      "kind": "znam"
     },
     {
-     "tag": "fotografija",
+     "tag": "video",
      "kind": "volim"
     }
    ]
@@ -862,10 +862,6 @@ export const SEED: SeedData = {
     {
      "tag": "sport",
      "kind": "znam"
-    },
-    {
-     "tag": "gaming",
-     "kind": "volim"
     }
    ]
   },
@@ -879,7 +875,7 @@ export const SEED: SeedData = {
      "kind": "znam"
     },
     {
-     "tag": "ples",
+     "tag": "muzika",
      "kind": "volim"
     }
    ]
@@ -973,7 +969,7 @@ export const SEED: SeedData = {
      "kind": "znam"
     },
     {
-     "tag": "fotografija",
+     "tag": "video",
      "kind": "volim"
     }
    ]
@@ -986,10 +982,6 @@ export const SEED: SeedData = {
     {
      "tag": "preduzetnistvo",
      "kind": "znam"
-    },
-    {
-     "tag": "programiranje",
-     "kind": "volim"
     }
    ]
   },
@@ -999,11 +991,11 @@ export const SEED: SeedData = {
    "class_id": "2-1",
    "tags": [
     {
-     "tag": "pisanje",
+     "tag": "jezici",
      "kind": "znam"
     },
     {
-     "tag": "podcast",
+     "tag": "video",
      "kind": "volim"
     }
    ]
@@ -1013,10 +1005,6 @@ export const SEED: SeedData = {
    "nick": "stefan.ritam",
    "class_id": "2-2",
    "tags": [
-    {
-     "tag": "bubnjevi",
-     "kind": "volim"
-    },
     {
      "tag": "muzika",
      "kind": "znam"
@@ -1063,7 +1051,7 @@ export const SEED: SeedData = {
      "kind": "znam"
     },
     {
-     "tag": "ples",
+     "tag": "muzika",
      "kind": "volim"
     }
    ]
@@ -1104,11 +1092,11 @@ export const SEED: SeedData = {
    "class_id": "3-1",
    "tags": [
     {
-     "tag": "fotografija",
+     "tag": "video",
      "kind": "znam"
     },
     {
-     "tag": "video",
+     "tag": "turizam",
      "kind": "volim"
     }
    ]
@@ -1119,12 +1107,8 @@ export const SEED: SeedData = {
    "class_id": "3-2",
    "tags": [
     {
-     "tag": "ples",
-     "kind": "znam"
-    },
-    {
      "tag": "muzika",
-     "kind": "volim"
+     "kind": "znam"
     }
    ]
   },
@@ -1134,12 +1118,12 @@ export const SEED: SeedData = {
    "class_id": "3-2",
    "tags": [
     {
-     "tag": "gaming",
+     "tag": "sport",
      "kind": "znam"
     },
     {
-     "tag": "programiranje",
-     "kind": "znam"
+     "tag": "crtanje",
+     "kind": "volim"
     }
    ]
   },
@@ -1168,7 +1152,7 @@ export const SEED: SeedData = {
      "kind": "volim"
     },
     {
-     "tag": "bubnjevi",
+     "tag": "muzika",
      "kind": "ucim"
     }
    ]
@@ -1209,12 +1193,12 @@ export const SEED: SeedData = {
    "class_id": "4-1",
    "tags": [
     {
-     "tag": "pisanje",
+     "tag": "jezici",
      "kind": "znam"
     },
     {
-     "tag": "podcast",
-     "kind": "znam"
+     "tag": "preduzetnistvo",
+     "kind": "volim"
     }
    ]
   },
@@ -1226,10 +1210,6 @@ export const SEED: SeedData = {
     {
      "tag": "video",
      "kind": "znam"
-    },
-    {
-     "tag": "fotografija",
-     "kind": "volim"
     }
    ]
   },
@@ -1243,7 +1223,7 @@ export const SEED: SeedData = {
      "kind": "znam"
     },
     {
-     "tag": "ples",
+     "tag": "muzika",
      "kind": "volim"
     }
    ]
@@ -1284,11 +1264,11 @@ export const SEED: SeedData = {
    "class_id": "4-4",
    "tags": [
     {
-     "tag": "bubnjevi",
+     "tag": "muzika",
      "kind": "znam"
     },
     {
-     "tag": "muzika",
+     "tag": "preduzetnistvo",
      "kind": "volim"
     }
    ]
@@ -1301,10 +1281,6 @@ export const SEED: SeedData = {
     {
      "tag": "crtanje",
      "kind": "volim"
-    },
-    {
-     "tag": "pisanje",
-     "kind": "ucim"
     }
    ]
   },
@@ -1318,8 +1294,8 @@ export const SEED: SeedData = {
      "kind": "volim"
     },
     {
-     "tag": "gaming",
-     "kind": "znam"
+     "tag": "sport",
+     "kind": "ucim"
     }
    ]
   },
@@ -1363,7 +1339,7 @@ export const SEED: SeedData = {
      "kind": "volim"
     },
     {
-     "tag": "fotografija",
+     "tag": "video",
      "kind": "ucim"
     }
    ]
@@ -1374,11 +1350,7 @@ export const SEED: SeedData = {
    "class_id": "3-4",
    "tags": [
     {
-     "tag": "bubnjevi",
-     "kind": "volim"
-    },
-    {
-     "tag": "gaming",
+     "tag": "muzika",
      "kind": "volim"
     }
    ]
@@ -1389,11 +1361,11 @@ export const SEED: SeedData = {
    "class_id": "3-2",
    "tags": [
     {
-     "tag": "ples",
+     "tag": "muzika",
      "kind": "volim"
     },
     {
-     "tag": "muzika",
+     "tag": "barmen",
      "kind": "ucim"
     }
    ]
@@ -1404,12 +1376,12 @@ export const SEED: SeedData = {
    "class_id": "4-3",
    "tags": [
     {
-     "tag": "programiranje",
-     "kind": "volim"
-    },
-    {
      "tag": "preduzetnistvo",
      "kind": "ucim"
+    },
+    {
+     "tag": "sport",
+     "kind": "volim"
     }
    ]
   },
@@ -1419,12 +1391,12 @@ export const SEED: SeedData = {
    "class_id": "4-1",
    "tags": [
     {
-     "tag": "pisanje",
-     "kind": "volim"
-    },
-    {
      "tag": "crtanje",
      "kind": "ucim"
+    },
+    {
+     "tag": "jezici",
+     "kind": "volim"
     }
    ]
   },
@@ -1466,7 +1438,7 @@ export const SEED: SeedData = {
    "icon": "🧭",
    "title": "Tura kroz Stari Bar traži vodiča na engleskom",
    "goal": "Šetnja za goste iz partnerske škole iz Italije.",
-   "spots": 2,
+   "spots": 3,
    "status": "open",
    "leader_id": "a0000000-0000-4000-8000-000000000009",
    "tags": [
@@ -1493,22 +1465,6 @@ export const SEED: SeedData = {
    "deadline": 14
   },
   {
-   "id": "b0000000-0000-4000-8000-000000000004",
-   "icon": "🥁",
-   "title": "Bendu fali bubnjar",
-   "goal": "Tri pjesme za školsku žurku na kraju polugodišta.",
-   "spots": 2,
-   "status": "open",
-   "leader_id": "a0000000-0000-4000-8000-000000000024",
-   "tags": [
-    "bubnjevi",
-    "muzika"
-   ],
-   "created": 6,
-   "approved": 5,
-   "deadline": 30
-  },
-  {
    "id": "b0000000-0000-4000-8000-000000000005",
    "icon": "🍹",
    "title": "Bezalkoholni kokteli za Dan škole traže barmena",
@@ -1528,7 +1484,7 @@ export const SEED: SeedData = {
    "icon": "🏐",
    "title": "Turnir u odbojci traži organizatore",
    "goal": "Međuodjeljenski turnir: raspored, sudije, medalje.",
-   "spots": 3,
+   "spots": 4,
    "status": "open",
    "leader_id": "a0000000-0000-4000-8000-000000000028",
    "tags": [
@@ -1556,54 +1512,19 @@ export const SEED: SeedData = {
    "deadline": 20
   },
   {
-   "id": "b0000000-0000-4000-8000-000000000008",
-   "icon": "📷",
-   "title": "Foto-priča „Ljudi naše škole“ traži fotografa",
-   "goal": "Deset portreta i kratkih priča za hodnik prvog sprata.",
-   "spots": 2,
-   "status": "open",
-   "leader_id": "a0000000-0000-4000-8000-000000000011",
-   "tags": [
-    "fotografija",
-    "pisanje"
-   ],
-   "created": 4,
-   "approved": 3,
-   "deadline": 28
-  },
-  {
    "id": "b0000000-0000-4000-8000-000000000009",
    "icon": "💃",
-   "title": "Plesna tačka za maturu traži plesače",
-   "goal": "Koreografija od tri minuta za maturski program.",
+   "title": "Muzički program za maturu traži izvođače",
+   "goal": "Ples i dvije pjesme za maturski program.",
    "spots": 4,
    "status": "open",
    "leader_id": "a0000000-0000-4000-8000-000000000019",
    "tags": [
-    "ples",
     "muzika"
    ],
    "created": 3,
    "approved": 2,
    "deadline": 40
-  },
-  {
-   "id": "b0000000-0000-4000-8000-000000000011",
-   "icon": "🎙️",
-   "title": "Školski podcast: 1. epizoda je vani",
-   "goal": "Prva epizoda o praksi u hotelima.",
-   "spots": 3,
-   "status": "done",
-   "leader_id": "a0000000-0000-4000-8000-000000000025",
-   "tags": [
-    "podcast",
-    "video"
-   ],
-   "created": 40,
-   "approved": 39,
-   "completed": 6,
-   "deadline": -5,
-   "result_text": "Snimili smo 25 minuta razgovora sa učenicima sa prakse u Budvi. Epizoda je na školskom sajtu!"
   },
   {
    "id": "b0000000-0000-4000-8000-000000000012",
@@ -1624,25 +1545,6 @@ export const SEED: SeedData = {
    "result_text": "30 osnovaca, 200 palačinki i nijedna izgorjela. Recepte smo podijelili roditeljima."
   },
   {
-   "id": "b0000000-0000-4000-8000-000000000013",
-   "icon": "🎮",
-   "title": "Mini igra o istoriji škole",
-   "goal": "Kviz-igra za Dan otvorenih vrata.",
-   "spots": 2,
-   "status": "done",
-   "leader_id": "a0000000-0000-4000-8000-000000000020",
-   "tags": [
-    "programiranje",
-    "gaming",
-    "pisanje"
-   ],
-   "created": 50,
-   "approved": 49,
-   "completed": 15,
-   "deadline": -14,
-   "result_text": "Igru je na Danu otvorenih vrata odigralo 120 posjetilaca. Kod je otvoren za sljedeću generaciju."
-  },
-  {
    "id": "b0000000-0000-4000-8000-000000000014",
    "icon": "🎄",
    "title": "Novogodišnji štand učeničke zadruge",
@@ -1660,6 +1562,25 @@ export const SEED: SeedData = {
    "completed": 20,
    "deadline": -19,
    "result_text": "Prikupili smo 640 € za opremu dječjeg odjeljenja bolnice."
+  },
+  {
+   "id": "b0000000-0000-4000-8000-000000000015",
+   "icon": "🎬",
+   "title": "Video vodič kroz Stari grad",
+   "goal": "Kratki video na tri jezika za goste škole.",
+   "spots": 3,
+   "status": "done",
+   "leader_id": "a0000000-0000-4000-8000-000000000026",
+   "tags": [
+    "video",
+    "turizam",
+    "jezici"
+   ],
+   "created": 40,
+   "approved": 39,
+   "completed": 6,
+   "deadline": -5,
+   "result_text": "Snimili smo vodič od 4 minuta na crnogorskom, engleskom i italijanskom. Pušta se na Danu otvorenih vrata."
   }
  ],
  "members": [
@@ -1679,11 +1600,6 @@ export const SEED: SeedData = {
    "joined": 13
   },
   {
-   "project_id": "b0000000-0000-4000-8000-000000000004",
-   "profile_id": "a0000000-0000-4000-8000-000000000024",
-   "joined": 5
-  },
-  {
    "project_id": "b0000000-0000-4000-8000-000000000005",
    "profile_id": "a0000000-0000-4000-8000-000000000023",
    "joined": 4
@@ -1699,19 +1615,9 @@ export const SEED: SeedData = {
    "joined": 6
   },
   {
-   "project_id": "b0000000-0000-4000-8000-000000000008",
-   "profile_id": "a0000000-0000-4000-8000-000000000011",
-   "joined": 3
-  },
-  {
    "project_id": "b0000000-0000-4000-8000-000000000009",
    "profile_id": "a0000000-0000-4000-8000-000000000019",
    "joined": 2
-  },
-  {
-   "project_id": "b0000000-0000-4000-8000-000000000011",
-   "profile_id": "a0000000-0000-4000-8000-000000000025",
-   "joined": 39
   },
   {
    "project_id": "b0000000-0000-4000-8000-000000000012",
@@ -1719,14 +1625,14 @@ export const SEED: SeedData = {
    "joined": 34
   },
   {
-   "project_id": "b0000000-0000-4000-8000-000000000013",
-   "profile_id": "a0000000-0000-4000-8000-000000000020",
-   "joined": 49
-  },
-  {
    "project_id": "b0000000-0000-4000-8000-000000000014",
    "profile_id": "a0000000-0000-4000-8000-000000000010",
    "joined": 59
+  },
+  {
+   "project_id": "b0000000-0000-4000-8000-000000000015",
+   "profile_id": "a0000000-0000-4000-8000-000000000026",
+   "joined": 39
   },
   {
    "project_id": "b0000000-0000-4000-8000-000000000001",
@@ -1744,6 +1650,11 @@ export const SEED: SeedData = {
    "joined": 6
   },
   {
+   "project_id": "b0000000-0000-4000-8000-000000000002",
+   "profile_id": "a0000000-0000-4000-8000-000000000027",
+   "joined": 6
+  },
+  {
    "project_id": "b0000000-0000-4000-8000-000000000003",
    "profile_id": "a0000000-0000-4000-8000-000000000003",
    "joined": 12
@@ -1752,11 +1663,6 @@ export const SEED: SeedData = {
    "project_id": "b0000000-0000-4000-8000-000000000003",
    "profile_id": "a0000000-0000-4000-8000-000000000001",
    "joined": 12
-  },
-  {
-   "project_id": "b0000000-0000-4000-8000-000000000004",
-   "profile_id": "a0000000-0000-4000-8000-000000000012",
-   "joined": 4
   },
   {
    "project_id": "b0000000-0000-4000-8000-000000000005",
@@ -1774,14 +1680,19 @@ export const SEED: SeedData = {
    "joined": 8
   },
   {
+   "project_id": "b0000000-0000-4000-8000-000000000006",
+   "profile_id": "a0000000-0000-4000-8000-000000000020",
+   "joined": 8
+  },
+  {
    "project_id": "b0000000-0000-4000-8000-000000000007",
    "profile_id": "a0000000-0000-4000-8000-000000000008",
    "joined": 5
   },
   {
-   "project_id": "b0000000-0000-4000-8000-000000000008",
-   "profile_id": "a0000000-0000-4000-8000-000000000018",
-   "joined": 2
+   "project_id": "b0000000-0000-4000-8000-000000000007",
+   "profile_id": "a0000000-0000-4000-8000-000000000025",
+   "joined": 5
   },
   {
    "project_id": "b0000000-0000-4000-8000-000000000009",
@@ -1790,18 +1701,13 @@ export const SEED: SeedData = {
   },
   {
    "project_id": "b0000000-0000-4000-8000-000000000009",
-   "profile_id": "a0000000-0000-4000-8000-000000000027",
+   "profile_id": "a0000000-0000-4000-8000-000000000024",
    "joined": 1
   },
   {
-   "project_id": "b0000000-0000-4000-8000-000000000011",
-   "profile_id": "a0000000-0000-4000-8000-000000000026",
-   "joined": 38
-  },
-  {
-   "project_id": "b0000000-0000-4000-8000-000000000011",
-   "profile_id": "a0000000-0000-4000-8000-000000000011",
-   "joined": 38
+   "project_id": "b0000000-0000-4000-8000-000000000009",
+   "profile_id": "a0000000-0000-4000-8000-000000000012",
+   "joined": 1
   },
   {
    "project_id": "b0000000-0000-4000-8000-000000000012",
@@ -1827,6 +1733,16 @@ export const SEED: SeedData = {
    "project_id": "b0000000-0000-4000-8000-000000000014",
    "profile_id": "a0000000-0000-4000-8000-000000000030",
    "joined": 58
+  },
+  {
+   "project_id": "b0000000-0000-4000-8000-000000000015",
+   "profile_id": "a0000000-0000-4000-8000-000000000018",
+   "joined": 38
+  },
+  {
+   "project_id": "b0000000-0000-4000-8000-000000000015",
+   "profile_id": "a0000000-0000-4000-8000-000000000011",
+   "joined": 38
   }
  ],
  "wall": [
@@ -1873,14 +1789,14 @@ export const SEED: SeedData = {
    "ago": 4
   },
   {
-   "project_id": "b0000000-0000-4000-8000-000000000004",
-   "author_id": "a0000000-0000-4000-8000-000000000024",
+   "project_id": "b0000000-0000-4000-8000-000000000009",
+   "author_id": "a0000000-0000-4000-8000-000000000019",
    "kind": "post",
-   "body": "Proba u muzičkom kabinetu, petak poslije škole.",
+   "body": "Proba u fiskulturnoj sali, petak poslije škole.",
    "ago": 2
   },
   {
-   "project_id": "b0000000-0000-4000-8000-000000000011",
+   "project_id": "b0000000-0000-4000-8000-000000000015",
    "author_id": null,
    "kind": "system",
    "body": "Projekat je završen! Rezultat je sada u feedu škole. 🎉",
@@ -1918,9 +1834,8 @@ export const SEED: SeedData = {
    "deadline": 18,
    "place": "Podgorica",
    "audience": "II–IV razred, timovi od 3 do 5",
-   "description": "Dva dana smišljanja digitalnih rješenja za lokalni turizam. Mentori iz IT firmi i hotela, hrana i majice obezbijeđeni. Ne moraš znati programiranje: trebaju i ljudi za ideju, dizajn i prezentaciju.",
+   "description": "Dva dana smišljanja digitalnih rješenja za lokalni turizam. Mentori iz IT firmi i hotela, hrana i majice obezbijeđeni. Trebaju ljudi za ideju, dizajn, jezike i prezentaciju.",
    "tags": [
-    "programiranje",
     "turizam",
     "preduzetnistvo",
     "crtanje"
@@ -1986,7 +1901,6 @@ export const SEED: SeedData = {
    "audience": "Učenici srednjih škola",
    "description": "Pošalji do tri fotografije ili video do 60 sekundi o mjestu u kojem živiš. Najbolji radovi idu na izložbu u gradskoj galeriji.",
    "tags": [
-    "fotografija",
     "video",
     "crtanje"
    ],
@@ -2020,8 +1934,7 @@ export const SEED: SeedData = {
    "audience": "Učenici i timovi do 4 člana",
    "description": "Opiši ideju na dvije strane: problem, rješenje, kupci i troškovi. Finalisti dobijaju mentorstvo i novčanu nagradu za početak.",
    "tags": [
-    "preduzetnistvo",
-    "pisanje"
+    "preduzetnistvo"
    ],
    "posted_by_label": "Profesorka ekonomije",
    "created": 8
@@ -2029,16 +1942,14 @@ export const SEED: SeedData = {
   {
    "id": "d0000000-0000-4000-8000-000000000008",
    "kind": "radionica",
-   "title": "Radionica: podcast i video za početnike",
+   "title": "Radionica: snimanje i montaža telefonom",
    "organizer": "Medijski centar za mlade",
    "deadline": 12,
    "place": "Podgorica",
    "audience": "Svi razredi",
-   "description": "Kako snimiti razgovor telefonom, očistiti zvuk i montirati kratak video. Ponesi telefon i slušalice.",
+   "description": "Kako snimiti dobar kadar telefonom, popraviti svjetlo i montirati kratak video za društvene mreže. Ponesi telefon.",
    "tags": [
-    "podcast",
-    "video",
-    "pisanje"
+    "video"
    ],
    "posted_by_label": "Mentorka sekcije",
    "created": 2

@@ -4,7 +4,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test'
 import { PASS, createProject, dismissInvitesExcept, metric0to1, register } from './helpers'
 
-const TITLE = 'Podcast traži montažera'
+const TITLE = 'Promo video za Dan otvorenih vrata traži snimatelja'
 const MENTOR_NICK = process.env.E2E_MENTOR_NICK ?? 'prof.e2e'
 const MENTOR_PASS = process.env.E2E_MENTOR_PASS ?? PASS
 
@@ -45,17 +45,17 @@ test('online: dva telefona + mentor, uživo preko Realtime', async ({ browser })
 
   // Telefon 1: A
   const a = await phone(browser)
-  await register(a, '3201', 'ucenicaA', ['podcast:znam', 'pisanje'])
+  await register(a, '3201', 'ucenicaA', ['turizam:znam', 'jezici'])
   await dismissInvitesExcept(a)
-  // Prilike van škole: A zna podcast → „Van škole · za tebe“ na vrhu feeda
+  // Prilike van škole: A zna turizam → „Van škole · za tebe“ na vrhu feeda
   await expect(a.getByTestId('out-for-you').getByRole('heading', { name: 'Van škole · za tebe' })).toBeVisible()
   await expect(a.getByTestId('out-for-you').getByTestId('for-me').first()).toBeVisible()
   await a.getByTestId('all-opps').click()
   await expect(a.getByTestId('opportunity-card')).toHaveCount(8)
-  await a.getByTestId('opportunity-card').filter({ hasText: 'podcast i video' }).click()
+  await a.getByTestId('opportunity-card').filter({ has: a.getByTestId('for-me') }).first().click()
   await a.getByTestId('opp-interest').click()
   await expect(a.getByTestId('opp-interest')).toHaveText(/Prijavljen\/a · poništi/)
-  await createProject(a, TITLE, 'Druga epizoda školskog podcasta.', ['video', 'podcast'])
+  await createProject(a, TITLE, 'Kratki promo video škole za Dan otvorenih vrata.', ['video'])
 
   // Mentor vidi projekat uživo (Realtime) i odobrava
   const pending = mentor.getByTestId('pending-project').filter({ hasText: TITLE })
@@ -70,7 +70,7 @@ test('online: dva telefona + mentor, uživo preko Realtime', async ({ browser })
   const card = b.getByTestId('invite-card')
   await expect(card).toBeVisible()
   await expect(card.getByText(TITLE + '.')).toBeVisible()
-  await expect(card.getByText(/Zašto ti: znaš · Video montaža/)).toBeVisible()
+  await expect(card.getByText(/Zašto ti: znaš · Foto i video/)).toBeVisible()
   await card.getByRole('button', { name: 'Pridružujem se' }).click()
   await expect(b.getByTestId('wall').getByText('ucenicaB se pridružio/la timu 🎉')).toBeVisible()
 

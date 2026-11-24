@@ -16,8 +16,9 @@
 Uključenost se dešava kroz ono što učenik **voli i zna**, a ne kroz etiketu.
 
 1. **Profil:** pristupni kod → nik → lozinka → oznake (*volim / znam / želim da naučim*). Ukupno ispod 30 sekundi, bez imena i emaila.
-2. **Feed:** projekti u toku, pozivi „traži se“ i završeni rezultati. Bez lajkova, pratilaca i rang-lista. Jedina akcija je „Pridruži se“.
-3. **Lični poziv:** stiže uživo: „**Trebaš nam.** Podcast traži montažera.“ Razlog je uvijek talenat ili interesovanje. Dugmad su „Pridružujem se“ i „Ne sada“. „Ne sada“ nema posljedica i ne pita za razlog.
+   Deset oznaka: kuvanje, poslastičarstvo, barmen i posluženje, turizam i ture, strani jezici, preduzetništvo, crtanje i dizajn, foto i video, muzika i ples, sport.
+2. **Feed:** tri kartice: **Sve · Van škole · Urađeno**. Bez lajkova, pratilaca i rang-lista, i bez dugmadi na karticama: dodir otvara projekat, a „Pridruži se“ je u detalju projekta.
+3. **Lični poziv:** stiže uživo: „**Trebaš nam.** Promo video za Dan otvorenih vrata traži snimatelja.“ Razlog je uvijek talenat ili interesovanje. Dugmad su „Pridružujem se“ i „Ne sada“. „Ne sada“ nema posljedica i ne pita za razlog.
 4. **Tim:** cilj, rok, članovi i grupni zid (vidi ga i mentor). Nema privatnih četova.
 5. **Rezultat:** tim označi projekat kao završen, a rezultat vide svi u feedu.
 6. **Prilike van škole:** takmičenja, hakatoni, radionice, predavanja, konkursi i volontiranje.
@@ -38,7 +39,7 @@ Uspravni snimci ekrana telefona, bez zvuka (fascikla [`docs/video/`](docs/video/
 | [`ConnectEd-demo-10s.mp4`](docs/video/ConnectEd-demo-10s.mp4) | 10 s | Učenica bira šta zna → poziv „Trebaš nam.“ → tim i zid |
 | [`ConnectEd-demo-uloge.mp4`](docs/video/ConnectEd-demo-uloge.mp4) | 26 s | Sa natpisima: mentor odobrava → učenica dobija poziv → vođa tima vidi novu članicu → mentor vidi napredak (zbirno) |
 
-Snimljeni su u offline režimu sa izmišljenim nikovima, prije dodavanja „Prilika van škole“.
+Snimljeni su u offline režimu sa izmišljenim nikovima, prije dodavanja „Prilika van škole“ i pojednostavljenja oznaka (u snimku su još stari podcast i „Video montaža“).
 
 ---
 
@@ -55,6 +56,7 @@ Snimljeni su u offline režimu sa izmišljenim nikovima, prije dodavanja „Pril
 ```
 supabase/migrations/   0001 šema · 0002 RLS · 0003 spajanje · 0004 RPC · 0005 realtime
                        0006–0007 ispravke i kodovi · 0008 prilike van škole · 0009 seed prilika (generisano)
+                       0010 pojednostavljenje: 10 oznaka, manje projekata
 supabase/seed.sql      izmišljeni učenici, projekti, kodovi (generisano)
 supabase/setup.sql     sve gore u jednom fajlu, za SQL Editor (generisano)
 src/config/school.ts   škola, smjerovi, odjeljenja, oznake  ← ovdje mijenjate
@@ -94,7 +96,7 @@ Pokreće se triggerom kad učenik sačuva oznake (novi nalog), kad mentor odobri
 2. Sačekajte da se projekat podigne (1–2 min).
 
 ### 2. Baza: migracije i seed
-> Baza postavljena ranijom verzijom: pokrenite redom fajlove koji nedostaju iz `supabase/migrations/` (`0006`, `0007`, `0008`, `0009`). U `setup.sql` su već uključeni.
+> Baza postavljena ranijom verzijom: pokrenite redom fajlove koji nedostaju iz `supabase/migrations/` (`0006` – `0010`). U `setup.sql` su već uključeni.
 
 1. U projektu otvorite **SQL Editor** → **New query**.
 2. Zalijepite **cijeli** sadržaj fajla [`supabase/setup.sql`](supabase/setup.sql) i kliknite **Run**. Pokreće se jednom, na praznom projektu.
@@ -153,12 +155,12 @@ Mentor vidi sve neiskorišćene kodove na ekranu **Mentor**. „Resetuj demo“ 
 
 **Priprema:** mentor (laptop ili telefon 3) je prijavljen i klikne **Resetuj demo**. Telefoni 1 i 2 imaju otvorenu aplikaciju na početnom ekranu.
 
-1. **Telefon 1, učenica A:** „Imam pristupni kod“ → `3201` → nik → lozinka → oznake: *Znam* → Podcast; *Volim* → Pisanje → **Sačuvaj profil**.
+1. **Telefon 1, učenica A:** „Imam pristupni kod“ → `3201` → nik → lozinka → oznake: *Znam* → Turizam i ture; *Volim* → Strani jezici → **Sačuvaj profil**.
    A može dobiti do dva poziva za postojeće projekte (npr. foto-priča, jer voli pisanje). Klikne „Ne sada“: to pokazuje da odbijanje nema posljedica.
-   **Pokreni projekat:** „Podcast traži montažera“, cilj, oznake *Video montaža* + *Podcast* → **Pošalji na odobrenje**.
+   **Pokreni projekat:** „Promo video za Dan otvorenih vrata traži snimatelja“, cilj, oznaka *Foto i video* → **Pošalji na odobrenje**.
 2. **Laptop, mentor:** projekat se sam pojavi pod „Na odobrenju“ → **✓ Odobri**.
-3. **Telefon 2, učenica B:** `2101` → nik → lozinka → *Znam* → **Video montaža** → Sačuvaj.
-   **Poziv stiže odmah:** „Trebaš nam. Podcast traži montažera. Zašto ti: znaš · Video montaža“ → **Pridružujem se** 🎉
+3. **Telefon 2, učenica B:** `2101` → nik → lozinka → *Znam* → **Foto i video** → Sačuvaj.
+   **Poziv stiže odmah:** „Trebaš nam. Promo video za Dan otvorenih vrata traži snimatelja. Zašto ti: znaš · Foto i video“ → **Pridružujem se** 🎉
 4. **Telefon 1:** A odmah dobije obavještenje „… se pridružio/la timu 🎉“, a B je na zidu tima.
    **Laptop:** mjerilo „prešlo sa 0 na 1 grupu“ poraste uživo.
 5. **Resetuj demo** vraća sve za sljedeću probu: kodovi su ponovo slobodni, a nalozi A i B se brišu.

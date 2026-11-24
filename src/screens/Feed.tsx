@@ -1,21 +1,19 @@
 import { useEffect } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useApp, useLive } from '../state'
 import { ProjectCard } from '../components/ProjectCard'
 import { OpportunityCard } from '../components/OpportunityCard'
 import { Icon } from '../components/Icon'
-import type { ProjectItem } from '../data/types'
 
-type Filter = 'sve' | 'pozivi' | 'utoku' | 'uradjeno' | 'van'
-const FILTERS: [Filter, string][] = [['sve', 'Sve'], ['van', 'Van škole'], ['pozivi', 'Pozivi'], ['utoku', 'U toku'], ['uradjeno', 'Urađeno']]
+type Filter = 'sve' | 'van' | 'uradjeno'
+const FILTERS: [Filter, string][] = [['sve', 'Sve'], ['van', 'Van škole'], ['uradjeno', 'Urađeno']]
 
 export function Feed() {
-  const { ds, me, toast, confetti, setInviteHold } = useApp()
-  const nav = useNavigate()
+  const { ds, me, setInviteHold } = useApp()
   const [params, setParams] = useSearchParams()
   const f = (FILTERS.find(([k]) => k === params.get('tab'))?.[0] ?? 'sve') as Filter
   const setF = (k: Filter) => setParams(k === 'sve' ? {} : { tab: k }, { replace: true })
-  const { data, error, reload } = useLive(() => ds.getFeed(), ['feed', 'invites'])
+  const { data, error } = useLive(() => ds.getFeed(), ['feed', 'invites'])
   const { data: opps } = useLive(() => ds.getOpportunities(), ['opportunities', 'reset'])
 
   // Na kartici „Van škole“ baner „Trebaš nam“ se ne prikazuje.
@@ -24,22 +22,8 @@ export function Feed() {
     return () => setInviteHold(false)
   }, [f, setInviteHold])
 
-  const join = async (p: ProjectItem) => {
-    try {
-      const r = await ds.joinProject(p.id)
-      if (r === 'full') return toast('Tim se upravo popunio. Biće još prilika!', '💜')
-      confetti()
-      toast('Dobro došli u tim! 🎉', '💜')
-      nav(`/projekat/${p.id}`)
-    } catch (e) {
-      toast((e as Error).message, '⚠️')
-      reload()
-    }
-  }
 
-  const items = (data ?? []).filter((p) =>
-    f === 'sve' ? true : f === 'pozivi' ? !!p.invite || (p.status === 'open' && p.free > 0) : f === 'utoku' ? p.status === 'open' || p.status === 'pending' : p.status === 'done',
-  )
+  const items = (data ?? []).filter((p) => (f === 'uradjeno' ? p.status === 'done' : true))
   const forMe = (opps ?? []).filter((o) => o.for_me)
   const top = (forMe.length ? forMe : opps ?? []).slice(0, 2)
 
@@ -88,7 +72,7 @@ export function Feed() {
           {!data && !error && <div className="spinner" />}
           {data && items.length === 0 && <p className="empty">Ovdje još nema ničega. Uskoro! ✨</p>}
           {items.map((p) => (
-            <ProjectCard key={p.id} p={p} onJoin={me?.role === 'student' ? join : undefined} />
+            <ProjectCard key={p.id} p={p} />
           ))}
         </>
       )}

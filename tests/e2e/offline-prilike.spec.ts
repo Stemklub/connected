@@ -10,7 +10,7 @@ async function switchTo(page: Page, nick: string) {
 }
 
 test('offline: prilike van škole', async ({ page }) => {
-  // Učenica voli crtanje (→ poziv za mural) i zna video montažu (→ prilike za video)
+  // Učenica voli crtanje (→ poziv za mural) i zna foto i video (→ prilike za video)
   await register(page, '3201', 'luna.video', ['video:znam', 'crtanje'])
   const invite = page.getByTestId('invite-card')
   await expect(invite).toBeVisible()
@@ -39,11 +39,11 @@ test('offline: prilike van škole', async ({ page }) => {
   // Zvonce prikazuje prilike koje odgovaraju učenici
   await expect(page.getByTestId('bell-dot')).toBeVisible()
   await page.getByTestId('bell').click()
-  await expect(page.getByText(/Prilika za tebe: „Radionica: podcast i video za početnike“/)).toBeVisible()
-  await page.getByText(/Prilika za tebe: „Radionica: podcast i video za početnike“/).click()
+  await expect(page.getByText(/Prilika za tebe: „Radionica: snimanje i montaža telefonom“/)).toBeVisible()
+  await page.getByText(/Prilika za tebe: „Radionica: snimanje i montaža telefonom“/).click()
 
   // Detalj: rok, mjesto, za koga, opis + dugmad
-  await expect(page.getByTestId('opportunity-title')).toHaveText('Radionica: podcast i video za početnike')
+  await expect(page.getByTestId('opportunity-title')).toHaveText('Radionica: snimanje i montaža telefonom')
   for (const t of ['Rok', 'Mjesto', 'Za koga']) await expect(page.getByText(t, { exact: true })).toBeVisible()
   await expect(page.getByText(/Objavio\/la: Mentorka sekcije/)).toBeVisible()
   await page.getByTestId('opp-interest').click()
@@ -51,8 +51,8 @@ test('offline: prilike van škole', async ({ page }) => {
 
   // „Ko ide sa mnom? Napravi tim“ → popunjen obrazac → mentoru na odobrenje
   await page.getByTestId('opp-team').click()
-  await expect(page.getByTestId('np-opportunity')).toContainText('Radionica: podcast i video za početnike')
-  await expect(page.getByTestId('np-title')).toHaveValue('Tim za: Radionica: podcast i video za početnike')
+  await expect(page.getByTestId('np-opportunity')).toContainText('Radionica: snimanje i montaža telefonom')
+  await expect(page.getByTestId('np-title')).toHaveValue('Tim za: Radionica: snimanje i montaža telefonom')
   await page.getByTestId('np-submit').click()
   await expect(page.getByText('Čeka mentora')).toBeVisible()
 
@@ -69,7 +69,7 @@ test('offline: prilike van škole', async ({ page }) => {
   await form.getByLabel('Mjesto').fill('Kotor')
   await form.getByLabel('Za koga').fill('Svi razredi')
   await form.getByLabel('Opis').fill('Sedam dana snimanja i montaže kratkog filma.')
-  await form.getByRole('button', { name: /Video montaža/ }).click()
+  await form.getByRole('button', { name: /Foto i video/ }).click()
   await form.getByRole('button', { name: 'Objavi' }).click()
   await expect(form).toBeHidden()
 

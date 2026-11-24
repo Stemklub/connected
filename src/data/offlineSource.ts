@@ -12,7 +12,7 @@ import type {
   Opportunity, OpportunityKind, ProjectDetail, ProjectItem, Role,
 } from './types'
 
-const KEY = 'ce-offline-v3'
+const KEY = 'ce-offline-v4'
 const DAY = 86400_000
 const OFFLINE_MENTOR_ID = 'c0000000-0000-4000-8000-000000000001'
 

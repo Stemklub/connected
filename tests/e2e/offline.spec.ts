@@ -2,7 +2,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { createProject, dismissInvitesExcept, metric0to1, register } from './helpers'
 
-const TITLE = 'Podcast traži montažera'
+const TITLE = 'Promo video za Dan otvorenih vrata traži snimatelja'
 
 async function switchTo(page: Page, nick: string) {
   await page.getByTestId('switch-account').click()
@@ -16,9 +16,9 @@ test('offline: A pokreće projekat → mentor odobrava → B prihvata poziv → 
   await expect(page.getByText('Pronađi svoje ljude.')).toBeVisible()
 
   // 1. Učenica A: nalog + projekat
-  await register(page, '3201', 'ucenicaA', ['podcast:znam', 'pisanje'])
+  await register(page, '3201', 'ucenicaA', ['turizam:znam', 'jezici'])
   await dismissInvitesExcept(page)
-  await createProject(page, TITLE, 'Druga epizoda školskog podcasta.', ['video', 'podcast'])
+  await createProject(page, TITLE, 'Kratki promo video škole za Dan otvorenih vrata.', ['video'])
   await expect(page.getByText('Čeka mentora')).toBeVisible()
 
   // 2. Mentor odobrava
@@ -38,7 +38,7 @@ test('offline: A pokreće projekat → mentor odobrava → B prihvata poziv → 
   await expect(card).toBeVisible()
   await expect(card.getByText('Trebaš nam.')).toBeVisible()
   await expect(card.getByText(TITLE + '.')).toBeVisible()
-  await expect(card.getByText(/Zašto ti: znaš · Video montaža/)).toBeVisible()
+  await expect(card.getByText(/Zašto ti: znaš · Foto i video/)).toBeVisible()
   await card.getByRole('button', { name: 'Pridružujem se' }).click()
   await expect(page.getByTestId('project-title')).toHaveText(TITLE)
   await expect(page.getByTestId('wall').getByText('ucenicaB se pridružio/la timu 🎉')).toBeVisible()

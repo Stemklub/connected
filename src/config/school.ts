@@ -44,20 +44,13 @@ export const TAGS = [
   { slug: 'kuvanje', label: 'Kuvanje', icon: '🍳' },
   { slug: 'poslasticarstvo', label: 'Poslastičarstvo', icon: '🧁' },
   { slug: 'barmen', label: 'Barmen i posluženje', icon: '🍹' },
-  { slug: 'turizam', label: 'Turizam i vođenje tura', icon: '🧭' },
+  { slug: 'turizam', label: 'Turizam i ture', icon: '🧭' },
   { slug: 'jezici', label: 'Strani jezici', icon: '🗣️' },
   { slug: 'preduzetnistvo', label: 'Preduzetništvo', icon: '💼' },
   { slug: 'crtanje', label: 'Crtanje i dizajn', icon: '🎨' },
-  { slug: 'fotografija', label: 'Fotografija', icon: '📷' },
-  { slug: 'video', label: 'Video montaža', icon: '🎬' },
-  { slug: 'muzika', label: 'Muzika', icon: '🎵' },
-  { slug: 'bubnjevi', label: 'Bubnjevi', icon: '🥁' },
-  { slug: 'ples', label: 'Ples', icon: '💃' },
+  { slug: 'video', label: 'Foto i video', icon: '📸' },
+  { slug: 'muzika', label: 'Muzika i ples', icon: '🎵' },
   { slug: 'sport', label: 'Sport', icon: '⚽' },
-  { slug: 'pisanje', label: 'Pisanje', icon: '✍️' },
-  { slug: 'podcast', label: 'Podcast', icon: '🎙️' },
-  { slug: 'programiranje', label: 'Programiranje', icon: '💻' },
-  { slug: 'gaming', label: 'Gaming', icon: '🎮' },
 ] as const
 
 export type TagSlug = (typeof TAGS)[number]['slug']
