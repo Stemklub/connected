@@ -70,26 +70,31 @@ describe('RLS i prava', () => {
     expect(JSON.stringify(s)).not.toMatch(/user_id|profile_id|code|source/)
   })
 
-  it('nik: samo iz ponuđenog skupa, jedinstven, sa slaganjem roda', async () => {
+  it('nik: kratka riječ iz ponuđenog skupa (kao Kahoot), jedinstven; kad se potroši, dobija cifru', async () => {
     const db = await freshDb()
     const u = await anonUser(db)
     await rpc(db, u, 'claim_demo_code', {})
     await expect(rpc(db, u, 'set_nick', { p_nick: 'Moj Nik' })).rejects.toThrow(/ponuđenih/)
-    await expect(rpc(db, u, 'set_nick', { p_nick: 'Zelena Sova' })).resolves.toBeTruthy()
-    await expect(rpc(db, u, 'set_nick', { p_nick: 'Brzi Delfin' })).resolves.toBeTruthy()
+    await expect(rpc(db, u, 'set_nick', { p_nick: 'Komet1' })).rejects.toThrow(/ponuđenih/)
+    await expect(rpc(db, u, 'set_nick', { p_nick: 'Komet' })).resolves.toBeTruthy()
+    await expect(rpc(db, u, 'set_nick', { p_nick: 'Laser7' })).resolves.toBeTruthy()
     const v = await anonUser(db)
     await rpc(db, v, 'claim_demo_code', {})
-    await expect(rpc(db, v, 'set_nick', { p_nick: 'Brzi Delfin' })).rejects.toThrow(/upravo neko uzeo/)
-    const pool = await db.query<{ nick: string }>(`select nick from private.nick_pool()`)
-    expect(pool.rows).toHaveLength(480)
-    const fem = ['Sova', 'Lisica', 'Kornjača', 'Vjeverica', 'Panda', 'Žirafa', 'Pčela', 'Lasta', 'Koala', 'Srna', 'Mačka', 'Zebra']
-    for (const { nick } of pool.rows) {
-      const [adj, animal] = nick.split(' ')
-      expect(adj.endsWith('a'), nick).toBe(fem.includes(animal))
-    }
+    await expect(rpc(db, v, 'set_nick', { p_nick: 'Laser7' })).rejects.toThrow(/upravo neko uzeo/)
+    const pool = (await db.query<{ nick: string }>(`select nick from private.nick_pool()`)).rows.map((r) => r.nick)
+    expect(pool.length).toBeGreaterThanOrEqual(90)
+    expect(new Set(pool).size).toBe(pool.length)
+    for (const n of pool) expect(n, n).toMatch(/^[A-ZČĆŠŽĐ][a-zčćšžđ]{1,7}$/)
     const sugg = await rpc<string[]>(db, v, 'suggest_nicks')
     expect(sugg).toHaveLength(6)
-    expect(sugg).not.toContain('Brzi Delfin')
+    expect(sugg).not.toContain('Komet')
+    for (const n of sugg) expect(n).not.toMatch(/\d/)
+    // kad se osnovni skup potroši: Komet2 … Komet9
+    await db.query(`insert into public.profiles (nick) select nick from private.nick_pool() on conflict do nothing`)
+    const more = await rpc<string[]>(db, v, 'suggest_nicks')
+    expect(more).toHaveLength(6)
+    for (const n of more) expect(n).toMatch(/^[A-ZČĆŠŽĐ][a-zčćšžđ]+[2-9]$/)
+    await expect(rpc(db, v, 'set_nick', { p_nick: more[0] })).resolves.toBeTruthy()
   })
 
   it('mentor: reset vraća seed u jednoj transakciji i briše učesnike sa njihovim nalozima', async () => {

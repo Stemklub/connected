@@ -255,7 +255,7 @@ textarea.input { resize: vertical; min-height: 84px; }
 .nick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; min-height: 120px; }
 .nick {
   border: 1.5px solid var(--line); background: #fff; border-radius: 16px; padding: 16px 10px;
-  font-family: var(--head); font-weight: 700; font-size: 16px; box-shadow: var(--shadow);
+  font-family: var(--head); font-weight: 800; font-size: 19px; box-shadow: var(--shadow);
 }
 .nick.on { border-color: var(--violet); background: var(--violet-soft); }
 .nick:active { transform: scale(0.97); }

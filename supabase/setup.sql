@@ -136,27 +136,28 @@ alter publication supabase_realtime add table public.demo_events;
 
 -- ── Pomoćne funkcije (šema private, nije izložena API-ju) ─────
 
--- Nikovi: „pridjev + životinja“ sa slaganjem roda (Zelena Sova, Brzi Delfin).
+-- Nikovi: kratke riječi kao u Kahootu (Komet, Laser, Turbo). Kad se potroše: Komet2 … Komet9.
 create or replace function private.nick_pool()
 returns table (nick text) language sql immutable set search_path = '' as $$
-  with adj(m, f) as (values
-    ('Brzi', 'Brza'), ('Zeleni', 'Zelena'), ('Hrabri', 'Hrabra'), ('Mudri', 'Mudra'), ('Plavi', 'Plava'),
-    ('Veseli', 'Vesela'), ('Tihi', 'Tiha'), ('Zlatni', 'Zlatna'), ('Smjeli', 'Smjela'), ('Radoznali', 'Radoznala'),
-    ('Crveni', 'Crvena'), ('Srebrni', 'Srebrna'), ('Sjajni', 'Sjajna'), ('Vrijedni', 'Vrijedna'), ('Mirni', 'Mirna'),
-    ('Snažni', 'Snažna'), ('Ljubičasti', 'Ljubičasta'), ('Narandžasti', 'Narandžasta'), ('Spretni', 'Spretna'), ('Vedri', 'Vedra')
-  ), animal(name, g) as (values
-    ('Delfin', 'm'), ('Vuk', 'm'), ('Soko', 'm'), ('Ris', 'm'), ('Medvjed', 'm'), ('Jež', 'm'),
-    ('Orao', 'm'), ('Pingvin', 'm'), ('Tigar', 'm'), ('Lav', 'm'), ('Gavran', 'm'), ('Zec', 'm'),
-    ('Sova', 'f'), ('Lisica', 'f'), ('Kornjača', 'f'), ('Vjeverica', 'f'), ('Panda', 'f'), ('Žirafa', 'f'),
-    ('Pčela', 'f'), ('Lasta', 'f'), ('Koala', 'f'), ('Srna', 'f'), ('Mačka', 'f'), ('Zebra', 'f')
-  )
-  select case a.g when 'm' then adj.m else adj.f end || ' ' || a.name from adj cross join animal a
+  select w from (values
+    ('Atom'), ('Bajt'), ('Kvark'), ('Laser'), ('Radar'), ('Sonar'), ('Turbo'), ('Neon'), ('Komet'),
+    ('Orbit'), ('Raketa'), ('Nova'), ('Kosmos'), ('Foton'), ('Proton'), ('Neutron'), ('Magnet'), ('Volt'),
+    ('Ion'), ('Robot'), ('Dron'), ('Modem'), ('Senzor'), ('Alfa'), ('Beta'), ('Gama'), ('Delta'), ('Sigma'),
+    ('Omega'), ('Lambda'), ('Munja'), ('Grom'), ('Vulkan'), ('Tornado'), ('Kristal'), ('Meteor'), ('Zmaj'),
+    ('Feniks'), ('Titan'), ('Lava'), ('Plazma'), ('Fuzija'), ('Kvazar'), ('Pulsar'), ('Spektar'), ('Vektor'),
+    ('Prizma'), ('Kompas'), ('Piksel'), ('Kursor'), ('Klik'), ('Turbina'), ('Motor'), ('Jupiter'), ('Mars'),
+    ('Saturn'), ('Venera'), ('Merkur'), ('Pluton'), ('Luna'), ('Sirius'), ('Vega'), ('Orion'), ('Zenit'),
+    ('Polaris'), ('Aurora'), ('Eho'), ('Kobalt'), ('Argon'), ('Helij'), ('Radon'), ('Ksenon'), ('Litij'),
+    ('Cink'), ('Bakar'), ('Nikl'), ('Gejzir'), ('Lavina'), ('Oluja'), ('Vihor'), ('Ciklon'), ('Talas'),
+    ('Blic'), ('Zoom'), ('Bum'), ('Fleš'), ('Hiper'), ('Mega'), ('Giga'), ('Tera'), ('Nano'), ('Mikro'),
+    ('Robo'), ('Kiber'), ('Disk'), ('Čip'), ('Kod'), ('Bit')
+  ) v(w)
 $$;
 
--- Dozvoljen nik: iz skupa, ili iz skupa + „ 2“…„ 9“ (kad se osnovni skup potroši).
+-- Dozvoljen nik: iz skupa, ili iz skupa + jedna cifra 2–9 (kad se osnovni skup potroši).
 create or replace function private.is_pool_nick(n text)
 returns boolean language sql immutable set search_path = '' as $$
-  select exists (select 1 from private.nick_pool() p where p.nick = regexp_replace(n, ' [2-9]$', ''))
+  select exists (select 1 from private.nick_pool() p where p.nick = regexp_replace(n, '[2-9]$', ''))
 $$;
 
 create or replace function private.fail(msg text, code text)
@@ -461,8 +462,8 @@ returns json language sql volatile security definer set search_path = '' as $$
     select n.nick, 0 as tier from private.nick_pool() n
     where not exists (select 1 from public.profiles p where p.nick = n.nick)
     union all
-    select n.nick || ' ' || s, s from private.nick_pool() n cross join generate_series(2, 9) s
-    where not exists (select 1 from public.profiles p where p.nick = n.nick || ' ' || s)
+    select n.nick || s, s from private.nick_pool() n cross join generate_series(2, 9) s
+    where not exists (select 1 from public.profiles p where p.nick = n.nick || s)
   ), pick as (
     select f.nick from free f order by f.tier, random() limit 6
   )

@@ -60,3 +60,18 @@ describe('konfiguracija', () => {
     expect(r.rows.map((x) => x.tag)).toContain(null)
   })
 })
+
+describe('zakrpa kratkih nikova', () => {
+  it('nad v2 bazom sa starim nikovima radi i nudi nove', async () => {
+    const db = await freshDb()
+    await db.exec(read('supabase/zakrpa-kratki-nikovi.sql'))
+    await db.exec(read('supabase/zakrpa-kratki-nikovi.sql'))
+    const p = await newParticipant(db, ['robotika'])
+    expect(p.nick).toMatch(/^[A-ZČĆŠŽĐ][a-zčćšžđ]+$/)
+    // svaka funkcija iz zakrpe je ista kao u setup.sql
+    const setup = read('supabase/setup.sql')
+    for (const fn of read('supabase/zakrpa-kratki-nikovi.sql').split(/(?=create or replace function)/).slice(1)) {
+      expect(setup).toContain(fn.trim())
+    }
+  })
+})

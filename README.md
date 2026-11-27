@@ -3,7 +3,7 @@
 <p align="center"><b>Pronađi svoje ljude.</b><br>
 Publika skenira QR kod, izabere ime i interesovanja i za 30 sekundi dobije poziv u tim. Platno u sali prikazuje uživo kako se timovi pune.</p>
 
-> **Demo.** Bez imena, emaila i lozinki za učesnike: samo izabrano ime („Zelena Sova“) i 1–4 interesovanja. Demo se poslije prezentacije resetuje.
+> **Demo.** Bez imena, emaila i lozinki za učesnike: samo izabrano ime („Komet“) i 1–4 interesovanja. Demo se poslije prezentacije resetuje.
 
 | | Link |
 |---|---|
@@ -20,14 +20,14 @@ Stara verzija (odjeljenja, offline režim, prilike van škole) je sačuvana pod 
 ## Tok
 
 1. **Ulaz** (`/#/`): dugme **Uđi**. Bez kucanja: `signInAnonymously()` + jedan kod iz bazena (`claim_demo_code`). Sesija ostaje u pregledaču, pa osvježavanje ne pravi novi nalog.
-2. **Ime:** šest slobodnih imena „pridjev + životinja“ sa slaganjem roda (Zelena Sova, Brzi Delfin) i dugme „Druga imena“. Slobodan unos ne postoji.
+2. **Ime:** šest slobodnih kratkih imena kao u Kahootu (Komet, Laser, Turbo; kad se potroše: Komet7) i dugme „Druga imena“. Slobodan unos ne postoji.
 3. **Interesovanja:** 1–4 od 8 oznaka → **Gotovo**.
 4. **Poziv** stiže u odgovoru na „Gotovo“ (ne preko Realtime-a): „**Trebaš nam u robotičkom timu.**“ + „Zašto ti: Robotika“. Dugmad su **Pridružujem se** / **Ne sada**. „Ne sada“ nema posljedica. Ako nema poklapanja, stiže rezervni poziv „STEM klub traži ljude sa idejama“.
 5. **Donja navigacija:** Za tebe · Moji timovi · Profil.
    - *Za tebe*: poziv na čekanju, timovi po interesovanjima (dugme „Pridruži se“) i ostali timovi.
    - *Moji timovi*: moji timovi sa članovima; sekundarni link „Imaš ideju? Predloži projekat“ (ide mentoru na odobrenje).
    - *Profil*: ime, interesovanja, **moj kod** i link **Imam kod** (nastavak istog naloga na drugom telefonu).
-6. **Platno** (`/#/platno`): QR kod, broj učesnika i broj u timovima, trake po timovima i zid „Zelena Sova se pridružuje robotičkom timu“. Samo zbirni brojevi i nikovi.
+6. **Platno** (`/#/platno`): QR kod, broj učesnika i broj u timovima, trake po timovima i zid „Komet se pridružuje robotičkom timu“. Samo zbirni brojevi i nikovi.
 7. **Mentor** (`/#/admin`, nik + lozinka): prijave otvorene/zatvorene, moderacija predloga, dodavanje kodova, CSV za štand (broj prijava i pridruživanja po izvoru, bez nikova) i **Resetuj demo**.
 
 **Spajanje** (na serveru, `private.match_invite`): poklapanje oznake projekta sa oznakama učesnika; od više poklapanja bira tim sa manje članova. Kad mentor odobri predlog, pozivi idu prvo onima koji nisu ni u jednom timu (skrivena prednost, ne vidi se u interfejsu ni u API odgovorima). Rezervni poziv dobija samo onaj ko nije u timu.
