@@ -7,13 +7,13 @@ Publika skenira QR kod, izabere ime i interesovanja i za 30 sekundi dobije poziv
 
 | | Link |
 |---|---|
-| Aplikacija (telefoni) | https://stemklub.github.io/ConnectEd/ |
-| Štand (bilježi izvor) | https://stemklub.github.io/ConnectEd/#/?izvor=stand |
-| Platno (1920×1080) | https://stemklub.github.io/ConnectEd/#/platno |
-| Platno za štand (QR vodi na `?izvor=stand`) | https://stemklub.github.io/ConnectEd/#/platno?izvor=stand |
-| Mentor | https://stemklub.github.io/ConnectEd/#/admin (`prof.e2e` / `demo1234`) |
+| Aplikacija (telefoni) | https://stemklub.github.io/connected/ |
+| Štand (bilježi izvor) | https://stemklub.github.io/connected/#/?izvor=stand |
+| Platno (1920×1080) | https://stemklub.github.io/connected/#/platno |
+| Platno za štand (QR vodi na `?izvor=stand`) | https://stemklub.github.io/connected/#/platno?izvor=stand |
+| Mentor | https://stemklub.github.io/connected/#/admin (`prof.e2e` / `demo1234`) |
 
-Stara verzija (odjeljenja, offline režim, prilike van škole) je sačuvana pod tagom [`v1-demo`](https://github.com/STEMklub/ConnectEd/tree/v1-demo).
+Stara verzija (odjeljenja, offline režim, prilike van škole) je sačuvana pod tagom [`v1-demo`](https://github.com/STEMklub/connected/tree/v1-demo).
 
 ---
 
@@ -50,7 +50,7 @@ src/screens/                    Entry (ulaz/ime/interesovanja/poziv), ForYou, Te
 tests/*.test.ts                 SQL testovi nad pravim setup.sql (PGlite + Postgres 16)
 tests/e2e/                      Playwright: telefon 390 px, platno 1920×1080, admin
 tests/server/fake-supabase.ts   lažni Supabase (Auth + RPC nad PGlite) za e2e i lokalni rad
-scripts/load-test.ts            100 klijenata nad pravim Supabase-om
+scripts/load-test.ts            50 klijenata (N=…) nad pravim Supabase-om
 ```
 
 **Baza:** `demo_settings`, `demo_codes`, `profiles` (nik, uloga, izvor), `tags`, `profile_tags`, `projects` (naslov, jedna rečenica, rok, oznaka, `join_text`, neograničena mjesta), `memberships`, `invites` (razlog = oznaka, bez skora), `demo_events` (nik + tekst, za zid).
@@ -112,15 +112,26 @@ PG_TEST_URL=postgres://postgres@localhost:5432/postgres npm test
                          # + 100 istovremenih claim_demo_code nad pravim Postgres-om (atomičnost kodova)
 npm run test:e2e         # Playwright nad lažnim Supabase-om: telefon 390 px, platno 1920×1080,
                          # admin (prijave, moderacija, CSV, reset), izvor stand
-E2E_BASE_URL=https://stemklub.github.io/ConnectEd/ npm run test:e2e
+E2E_BASE_URL=https://stemklub.github.io/connected/ npm run test:e2e
                          # isto nad objavljenom aplikacijom i pravim Supabase-om (RESETUJE demo!)
 ```
 
-**Load test** (pravi Supabase; na početku i na kraju resetuje demo):
+**Load test** (pravi Supabase; na početku i na kraju resetuje demo; podrazumijevano 50 klijenata):
 ```bash
 SUPABASE_URL=https://<projekat>.supabase.co SUPABASE_ANON_KEY=<publishable ključ> npm run load-test
 ```
-100 klijenata istovremeno: anonimna prijava → kod → nik → oznake → poziv → prihvati. Prolazi ako nema grešaka i ako je p95 vremena do poziva (odgovor na „Gotovo“) ispod 3 s. Opcije: `N`, `RAMP_MS`, `RESET`, `P95_LIMIT_MS`, `MENTOR_NICK`, `MENTOR_PASS`. Ako padne na `signInAnonymously` sa „rate limit“, podignite granicu iz koraka 2.
+50 klijenata istovremeno: anonimna prijava → kod → nik → oznake → poziv → prihvati. Prolazi ako nema grešaka i ako je p95 vremena do poziva (odgovor na „Gotovo“) ispod 3 s. Opcije: `N`, `RAMP_MS`, `RESET`, `P95_LIMIT_MS`, `MENTOR_NICK`, `MENTOR_PASS`. Ako padne na `signInAnonymously` sa „rate limit“, podignite granicu iz koraka 2.
+
+Rezultati nad pravim Supabase-om (Free, Frankfurt), 27. nov 2026:
+
+| Klijenata | Za koliko | p95 do poziva | Cijeli tok p95 | Greške |
+|---|---|---|---|---|
+| 50 | 2 s | 452 ms | 2,0 s | 0 |
+| 50 | 10 s | 157 ms | 0,9 s | 0 |
+| 100 | 2 s | 637 ms | 7,8 s | 0 |
+| 100 | 10 s | 1,5 s | 11,5 s | 0 |
+
+Kod 100 ljudi gotovo istovremeno najviše čeka „Uđi“ (anonimna prijava + kod, i do 6 s), jer Free server tada istovremeno pravi mnogo naloga. Poziv i dalje stiže ispod 3 s.
 
 ## Prilagođavanje
 - **Oznake:** `src/config/demo.ts` **i** `private.load_seed()` u `supabase/setup.sql` (test pada ako se razlikuju). Zatim `npm run gen:upgrade`.

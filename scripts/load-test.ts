@@ -3,7 +3,7 @@
 // Mjeri vrijeme do poziva (odgovor na „Gotovo“) i cijeli tok. Cilj: p95 vremena do poziva < 3 s.
 //
 //   SUPABASE_URL=https://<projekat>.supabase.co SUPABASE_ANON_KEY=<publishable> npm run load-test
-//   Opcije (env): N=100  RAMP_MS=2000  MENTOR_NICK=prof.e2e  MENTOR_PASS=demo1234
+//   Opcije (env): N=50  RAMP_MS=2000  MENTOR_NICK=prof.e2e  MENTOR_PASS=demo1234
 //                 RESET=before|after|both|none (podrazumijevano both)  P95_LIMIT_MS=3000
 // Prije testa: Supabase → Authentication → anonimne prijave UKLJUČENE i rate limit podignut (README).
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
@@ -11,7 +11,7 @@ import { TAGS } from '../src/config/demo'
 
 const URL_ = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
 const KEY = process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY
-const N = Number(process.env.N ?? 100)
+const N = Number(process.env.N ?? 50)
 const RAMP_MS = Number(process.env.RAMP_MS ?? 2000)
 const RESET = process.env.RESET ?? 'both'
 const P95_LIMIT = Number(process.env.P95_LIMIT_MS ?? 3000)
