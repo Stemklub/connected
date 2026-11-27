@@ -12,10 +12,10 @@ const V1_FUNCTIONS = [
 ]
 // v2 objekti se takođe brišu, da bi se skripta mogla pokrenuti ponovo ako je prvi put stala na pola.
 const V2_FUNCTIONS = [
-  'claim_demo_code', 'get_team', 'suggest_nicks', 'set_nick', 'save_interests', 'get_for_you', 'get_my_teams', 'propose_project',
+  'claim_demo_code', 'get_team', 'set_team_mentor', 'suggest_nicks', 'set_nick', 'save_interests', 'get_for_you', 'get_my_teams', 'propose_project',
   'get_screen', 'get_admin', 'set_registrations', 'generate_codes', 'export_stand_stats',
 ]
-const V2_TABLES = ['demo_events', 'memberships', 'demo_codes', 'demo_settings']
+const V2_TABLES = ['team_mentors', 'demo_events', 'memberships', 'demo_codes', 'demo_settings']
 const V1_TABLES = [
   'wall_posts', 'notifications', 'help_signals', 'group_members', 'invites', 'project_tags', 'projects',
   'opportunity_interest', 'opportunity_tags', 'opportunities', 'profile_tags', 'access_codes', 'profiles', 'tags',

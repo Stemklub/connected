@@ -101,6 +101,14 @@ create table public.demo_events (
   created_at timestamptz not null default now()
 );
 
+-- Mentor tima (ime nastavnika, upisuje admin). Odvojeno od projects da bi ostalo i poslije reseta.
+create table if not exists public.team_mentors (
+  project_id uuid primary key,
+  mentor     text not null check (char_length(mentor) between 2 and 60)
+);
+alter table public.team_mentors enable row level security;
+revoke all on public.team_mentors from anon, authenticated;
+
 -- Neuspjeli pokušaji „Imam kod“ (zaštita od pogađanja).
 create table private.code_attempts (
   user_id uuid not null,
@@ -222,7 +230,8 @@ returns json language sql stable security definer set search_path = '' as $$
         select p.nick from public.memberships m join public.profiles p on p.id = m.profile_id
         where m.project_id = pr.id order by m.joined_at desc limit 12
       ) x), '[]'::json),
-    'is_member', exists (select 1 from public.memberships m where m.project_id = pr.id and m.profile_id = viewer)
+    'is_member', exists (select 1 from public.memberships m where m.project_id = pr.id and m.profile_id = viewer),
+    'mentor', (select t.mentor from public.team_mentors t where t.project_id = pr.id)
   )
 $$;
 
@@ -645,6 +654,13 @@ begin
                       order by x.created_at)
       from public.projects x where x.status = 'pending'
     ), '[]'::json),
+    'teams', coalesce((
+      select json_agg(json_build_object('id', x.id, 'title', x.title, 'tag', x.tag, 'is_fallback', x.is_fallback,
+                                        'mentor', (select t.mentor from public.team_mentors t where t.project_id = x.id),
+                                        'members', (select count(*) from public.memberships mm where mm.project_id = x.id))
+                      order by x.is_fallback, x.created_at, x.title)
+      from public.projects x where x.status = 'open'
+    ), '[]'::json),
     'screen', public.get_screen()
   );
 end $$;
@@ -677,6 +693,22 @@ begin
   return json_build_object('status', 'open', 'invited', invited);
 end $$;
 
+create or replace function public.set_team_mentor(p_project uuid, p_mentor text)
+returns void language plpgsql security definer set search_path = '' as $$
+declare v text := nullif(btrim(coalesce(p_mentor, '')), '');
+begin
+  perform private.require_mentor();
+  if not exists (select 1 from public.projects where id = p_project) then perform private.fail('Tim nije pronađen.', 'not_found'); end if;
+  if v is null then
+    delete from public.team_mentors where project_id = p_project;
+  elsif char_length(v) > 60 then
+    perform private.fail('Ime mentora može imati najviše 60 znakova.', 'bad_mentor');
+  else
+    insert into public.team_mentors (project_id, mentor) values (p_project, v)
+      on conflict (project_id) do update set mentor = excluded.mentor;
+  end if;
+end $$;
+
 -- Vraća demo na početak u JEDNOJ transakciji: brišu se svi učesnici (i njihovi anonimni nalozi),
 -- predlozi, članstva, pozivi i zid; kodovi se oslobađaju; seed projekti se vraćaju. Mentori ostaju.
 create or replace function public.reset_demo()
@@ -691,6 +723,8 @@ begin
   delete from private.code_attempts where true;
   update public.demo_codes set used_at = null, used_by = null where used_at is not null or used_by is not null;
   perform private.load_seed();
+  -- mentori seed timova ostaju; mentori obrisanih (predloženih) timova se brišu
+  delete from public.team_mentors t where not exists (select 1 from public.projects x where x.id = t.project_id);
   update public.demo_settings set registrations_open = true, reset_at = now() where id = 1;
   return json_build_object(
     'projects', (select count(*) from public.projects),
@@ -733,7 +767,7 @@ grant execute on function
   public.set_nick(text), public.save_interests(text[]), public.respond_invite(uuid, boolean),
   public.join_project(uuid), public.get_for_you(), public.get_my_teams(), public.get_team(uuid),
   public.propose_project(text, text, text), public.get_admin(), public.set_registrations(boolean),
-  public.approve_project(uuid, boolean), public.reset_demo(), public.generate_codes(int),
+  public.approve_project(uuid, boolean), public.set_team_mentor(uuid, text), public.reset_demo(), public.generate_codes(int),
   public.export_stand_stats()
 to authenticated;
 grant execute on function public.get_screen() to anon, authenticated;

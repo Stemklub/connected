@@ -140,14 +140,14 @@ function Dashboard() {
         </div>
       ))}
 
-      <div className="section-title"><h2>Timovi</h2></div>
-      <div className="card stack" style={{ gap: 6 }}>
-        {s.teams.map((t) => (
-          <div key={t.id} className="row spread small">
-            <span>{tagIcon(t.tag)} {t.title}</span>
-            <b>{t.members}</b>
-          </div>
+      <div className="section-title"><h2>Timovi i mentori</h2></div>
+      <div className="card stack" style={{ gap: 10 }}>
+        {(data.teams ?? s.teams.map((t) => ({ ...t, mentor: null }))).map((t) => (
+          <MentorRow key={t.id} team={t} disabled={busy || !data.teams}
+            onSave={(v) => act(() => rpc('set_team_mentor', { p_project: t.id, p_mentor: v }), v ? `Mentor tima: ${v}` : 'Mentor je uklonjen.')} />
         ))}
+        {!data.teams && <p className="tiny">Za upis mentora pokrenite supabase/zakrpa-mentor-tima.sql.</p>}
+        <p className="tiny">Ime mentora vide učesnici na timu i na pozivu. Ostaje i poslije reseta.</p>
       </div>
 
       <div className="section-title"><h2>Kodovi i štand</h2></div>
@@ -177,6 +177,29 @@ function Dashboard() {
         )}
       </div>
     </div>
+  )
+}
+
+function MentorRow({ team, disabled, onSave }: {
+  team: { id: string; title: string; tag: string | null; mentor: string | null; members: number }
+  disabled: boolean
+  onSave: (v: string) => void
+}) {
+  const [v, setV] = useState(team.mentor ?? '')
+  useEffect(() => setV(team.mentor ?? ''), [team.mentor])
+  const changed = v.trim() !== (team.mentor ?? '')
+  return (
+    <form className="mentor-row" data-testid="mentor-row" onSubmit={(e) => { e.preventDefault(); if (changed) onSave(v.trim()) }}>
+      <div className="row spread small">
+        <span>{tagIcon(team.tag)} {team.title}</span>
+        <b title="članova">{team.members}</b>
+      </div>
+      <div className="row">
+        <input className="input small-input" placeholder="Mentor, npr. prof. Marković" maxLength={60} value={v}
+          aria-label={`Mentor: ${team.title}`} disabled={disabled && !changed} onChange={(e) => setV(e.target.value)} />
+        <button className="btn small soft" disabled={disabled || !changed}>Sačuvaj</button>
+      </div>
+    </form>
   )
 }
 

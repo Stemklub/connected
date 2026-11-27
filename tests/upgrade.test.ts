@@ -30,7 +30,7 @@ describe('nadogradnja v1 → v2', () => {
       `select table_name from information_schema.tables where table_schema = 'public' order by 1`,
     )
     expect(tables.rows.map((t) => t.table_name)).toEqual([
-      'demo_codes', 'demo_events', 'demo_settings', 'invites', 'memberships', 'profile_tags', 'profiles', 'projects', 'tags',
+      'demo_codes', 'demo_events', 'demo_settings', 'invites', 'memberships', 'profile_tags', 'profiles', 'projects', 'tags', 'team_mentors',
     ])
     const types = await db.query(`select 1 from pg_type t join pg_namespace n on n.oid = t.typnamespace where n.nspname = 'public' and t.typtype = 'e'`)
     expect(types.rows).toHaveLength(0)

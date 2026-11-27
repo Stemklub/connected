@@ -118,8 +118,17 @@ test('admin: prijave, moderacija predloga, izvor stand, CSV i reset', async ({ b
   await expect(prop).toBeVisible()
   await prop.getByTestId('approve').click()
   await expect(prop).toBeHidden()
+  // mentor tima: admin upisuje, učesnik vidi na kartici i na ekranu tima
+  const row = admin.getByTestId('mentor-row').filter({ hasText: 'Bend STEM kluba' })
+  await row.getByRole('textbox').fill('prof. Test')
+  await row.getByRole('button', { name: 'Sačuvaj' }).click()
+  await expect(admin.getByText('Mentor tima: prof. Test')).toBeVisible()
   await s.reload()
-  await expect(s.getByTestId('team-card').filter({ hasText: 'Bend STEM kluba' })).toBeVisible()
+  const bend = s.getByTestId('team-card').filter({ hasText: 'Bend STEM kluba' })
+  await expect(bend).toContainText('Mentor: prof. Test')
+  await bend.click()
+  await expect(s.getByTestId('team-mentor')).toContainText('prof. Test')
+  await s.getByRole('button', { name: 'Nazad' }).click()
 
   // CSV
   const dl = admin.waitForEvent('download')

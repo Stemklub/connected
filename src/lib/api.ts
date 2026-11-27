@@ -66,6 +66,8 @@ export interface Project {
   member_count: number
   members: string[]
   is_member: boolean
+  /** Ime nastavnika; upisuje admin. Starija baza (prije zakrpe) ga nema. */
+  mentor?: string | null
 }
 
 export interface Invite {
@@ -121,6 +123,8 @@ export interface AdminData {
   codes_free: number
   codes_used: number
   proposals: { id: string; title: string; sentence: string; tag: string | null; nick: string | null; created_at: string }[]
+  /** Starija baza (prije zakrpe za mentore) ga nema. */
+  teams?: { id: string; title: string; tag: string | null; is_fallback: boolean; mentor: string | null; members: number }[]
   screen: Screen
 }
 

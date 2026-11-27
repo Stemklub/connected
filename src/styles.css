@@ -320,3 +320,9 @@ textarea.input { resize: vertical; min-height: 84px; }
 .member.me { background: var(--violet-soft); color: var(--violet); }
 .avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 13px; font-weight: 800; background: var(--grad); flex: none; }
 .team .chev { color: var(--ink-3); align-self: center; }
+.mentor-line { color: var(--ink-2); font-weight: 600; }
+.invite .mentor-line { margin: -4px 0 10px; }
+.mentor-av { background: var(--violet-soft); font-size: 16px; }
+.mentor-row { display: flex; flex-direction: column; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.mentor-row:last-of-type { border-bottom: 0; }
+.input.small-input { padding: 9px 12px; font-size: 15px; }

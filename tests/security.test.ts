@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { PGlite } from '@electric-sql/pglite'
 import { anonUser, freshDb, mentorId, newParticipant, rpc } from './helpers/db'
 
-const TABLES = ['demo_settings', 'tags', 'profiles', 'demo_codes', 'profile_tags', 'projects', 'memberships', 'invites']
+const TABLES = ['demo_settings', 'tags', 'profiles', 'demo_codes', 'profile_tags', 'projects', 'memberships', 'invites', 'team_mentors']
 
 async function asRole<T>(db: PGlite, uid: string | null, sql: string): Promise<T[]> {
   return db.transaction(async (tx) => {
@@ -131,5 +131,25 @@ describe('RLS i prava', () => {
     const s = await rpc<{ teams: { id: string }[] }>(db, null, 'get_screen')
     expect(s.teams.map((t) => t.id)).not.toContain(id)
     await expect(rpc(db, a.uid, 'join_project', { p_project: id })).rejects.toThrow(/ne prima/)
+  })
+
+  it('mentor tima: upisuje samo mentor, vidi se na timu i pozivu, ostaje poslije reseta', async () => {
+    const db = await freshDb()
+    const m = await mentorId(db)
+    const robot = 'a0000000-0000-4000-8000-000000000001'
+    await rpc(db, m, 'set_team_mentor', { p_project: robot, p_mentor: '  prof. Marković ' })
+    const p = await newParticipant(db, ['robotika'])
+    expect((p.invite!.project as unknown as { mentor: string }).mentor).toBe('prof. Marković')
+    await expect(rpc(db, p.uid, 'set_team_mentor', { p_project: robot, p_mentor: 'ja' })).rejects.toThrow(/Samo za mentore/)
+    const adm = await rpc<{ teams: { id: string; mentor: string | null }[] }>(db, m, 'get_admin')
+    expect(adm.teams.find((t) => t.id === robot)!.mentor).toBe('prof. Marković')
+    await rpc(db, m, 'reset_demo')
+    const q = await newParticipant(db, ['robotika'])
+    expect((q.invite!.project as unknown as { mentor: string }).mentor).toBe('prof. Marković')
+    await rpc(db, m, 'set_team_mentor', { p_project: robot, p_mentor: '' })
+    const t = await rpc<{ project: { mentor: string | null } }>(db, q.uid, 'get_team', { p_project: robot })
+    expect(t.project.mentor).toBeNull()
+    const s = await rpc<Record<string, unknown>>(db, null, 'get_screen')
+    expect(JSON.stringify(s)).not.toMatch(/mentor/)
   })
 })

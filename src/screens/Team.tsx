@@ -42,6 +42,14 @@ export function Team() {
         </div>
       </div>
 
+      <div className="card row" data-testid="team-mentor">
+        <span className="avatar mentor-av">🧑‍🏫</span>
+        <div>
+          <div className="tiny">Mentor tima</div>
+          <b className="head">{p.mentor || 'Biće određen uskoro'}</b>
+        </div>
+      </div>
+
       <div className="card stack">
         <div className="row spread">
           <h3>Članovi</h3>

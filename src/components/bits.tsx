@@ -62,6 +62,7 @@ export function TeamCard({ p, onJoin, busy }: { p: Project; onJoin?: () => void;
           <div className="meta">
             {p.tag ? tagLabel(p.tag) : 'Za sve'} · {members(p.member_count)} · rok {fmtDate(p.deadline)}
           </div>
+          {p.mentor && <div className="small mentor-line" style={{ marginTop: 4 }}>🧑‍🏫 Mentor: {p.mentor}</div>}
           {p.members.length > 0 && <div className="tiny" style={{ marginTop: 4 }}>{p.members.slice(0, 6).join(' · ')}</div>}
         </div>
         <span className="chev"><Icon name="chev" size={20} /></span>
@@ -87,6 +88,7 @@ export function InviteCard({ inv, onAnswer, busy }: { inv: Invite; onAnswer: (ac
       <div className="ptile big">{tagIcon(p.tag)}</div>
       <h1>{needYou(p.join_text)}</h1>
       <p className="lead"><b>{p.title}</b>. {p.sentence}</p>
+      {p.mentor && <p className="small mentor-line" data-testid="invite-mentor">🧑‍🏫 Mentor: {p.mentor}</p>}
       <span className="why" data-testid="invite-why">
         {inv.reason_tag ? <>{tagIcon(inv.reason_tag)} Zašto ti: {tagLabel(inv.reason_tag)}</> : <>💡 {APP.club} traži ljude sa idejama</>}
       </span>
