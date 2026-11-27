@@ -37,6 +37,11 @@ describe('nadogradnja v1 → v2', () => {
     expect(adm).toMatchObject({ nick: 'prof.e2e', codes_free: 300 })
     const p = await newParticipant(db, ['robotika'])
     expect(p.invite).not.toBeNull()
+
+    // ponovno pokretanje (npr. ako je prvi put stalo na pola) ne smije pući ni izgubiti mentora
+    await db.exec(read('supabase/nadogradnja-v1-v2.sql'))
+    expect((await rpc<{ nick: string }>(db, mentor, 'get_admin')).nick).toBe('prof.e2e')
+    expect(await db.query(`select 1 from information_schema.tables where table_name = 'ce_keep_mentors'`)).toMatchObject({ rows: [] })
     await rpc(db, mentor, 'reset_demo')
   }, 60_000)
 })
