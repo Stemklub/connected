@@ -1,196 +1,130 @@
 <p align="center"><img src="public/logo.png" alt="ConnectEd" width="360"></p>
 
 <p align="center"><b>Pronađi svoje ljude.</b><br>
-Živi feed škole koji učenike spaja po interesovanjima i talentima u mješovite timove koji zajedno nešto naprave.</p>
+Publika skenira QR kod, izabere ime i interesovanja i za 30 sekundi dobije poziv u tim. Platno u sali prikazuje uživo kako se timovi pune.</p>
 
-<p align="center"><b>JU Srednja ekonomsko-ugostiteljska škola</b> · demo za srednjoškolski hakaton <b>OpenHack</b> (Savjet Evrope + NTP Crne Gore)</p>
+> **Demo.** Bez imena, emaila i lozinki za učesnike: samo izabrano ime („Zelena Sova“) i 1–4 interesovanja. Demo se poslije prezentacije resetuje.
 
-> **Demo.** Škola je prava, ali su **svi učenici u bazi izmišljeni** (samo nikovi). Nema stvarnih podataka o učenicima, nema analitike ni praćenja.
+| | Link |
+|---|---|
+| Aplikacija (telefoni) | https://stemklub.github.io/ConnectEd/ |
+| Štand (bilježi izvor) | https://stemklub.github.io/ConnectEd/#/?izvor=stand |
+| Platno (1920×1080) | https://stemklub.github.io/ConnectEd/#/platno |
+| Platno za štand (QR vodi na `?izvor=stand`) | https://stemklub.github.io/ConnectEd/#/platno?izvor=stand |
+| Mentor | https://stemklub.github.io/ConnectEd/#/admin (`prof.e2e` / `demo1234`) |
 
-**Aplikacija:** https://snezaaaa.github.io/connected/
-
----
-
-## Šta radi
-
-Uključenost se dešava kroz ono što učenik **voli i zna**, a ne kroz etiketu.
-
-1. **Profil:** pristupni kod → nik → lozinka → oznake (*volim / znam / želim da naučim*). Ukupno ispod 30 sekundi, bez imena i emaila.
-   Deset oznaka: kuvanje, poslastičarstvo, barmen i posluženje, turizam i ture, strani jezici, preduzetništvo, crtanje i dizajn, foto i video, muzika i ples, sport.
-2. **Feed:** tri kartice: **Sve · Van škole · Urađeno**. Bez lajkova, pratilaca i rang-lista, i bez dugmadi na karticama: dodir otvara projekat, a „Pridruži se“ je u detalju projekta.
-3. **Lični poziv:** stiže uživo: „**Trebaš nam.** Promo video za Dan otvorenih vrata traži snimatelja.“ Razlog je uvijek talenat ili interesovanje. Dugmad su „Pridružujem se“ i „Ne sada“. „Ne sada“ nema posljedica i ne pita za razlog.
-4. **Tim:** cilj, rok, članovi i grupni zid (vidi ga i mentor). Nema privatnih četova.
-5. **Rezultat:** tim označi projekat kao završen, a rezultat vide svi u feedu.
-6. **Prilike van škole:** takmičenja, hakatoni, radionice, predavanja, konkursi i volontiranje.
-   - Kartica **„Van škole“** u feedu: sve prilike, a prve su one koje odgovaraju oznakama učenika (značka **„Za tebe“**).
-   - Kartica **„Sve“**: na vrhu „Van škole · za tebe“ (do 2 prilike) i link „Sve prilike“, ispod „U školi“.
-   - Detalj prilike: rok, mjesto, za koga, opis, ko je objavio, i dugmad **„Zanima me — prijavi me“** (vidi samo učenik) i **„Ko ide sa mnom? Napravi tim“** (tim ide mentoru na odobrenje, zatim kroz isto spajanje).
-   - Zvonce javlja prilike koje odgovaraju učeniku. Mentor objavljuje nove prilike na ekranu „Mentor“.
-   - Na kartici „Van škole“ i u detalju prilike ne iskače poziv „Trebaš nam“.
-
-Spajanje tiho daje prednost učenicima koji trenutno nisu ni u jednoj grupi. To pravilo se ne vidi u interfejsu ni u odgovorima API-ja.
-
-## Demo snimci
-
-Uspravni snimci ekrana telefona, bez zvuka (fascikla [`docs/video/`](docs/video/)):
-
-| Snimak | Trajanje | Šta prikazuje |
-|---|---|---|
-| [`ConnectEd-demo-10s.mp4`](docs/video/ConnectEd-demo-10s.mp4) | 10 s | Učenica bira šta zna → poziv „Trebaš nam.“ → tim i zid |
-| [`ConnectEd-demo-uloge.mp4`](docs/video/ConnectEd-demo-uloge.mp4) | 26 s | Sa natpisima: mentor odobrava → učenica dobija poziv → vođa tima vidi novu članicu → mentor vidi napredak (zbirno) |
-
-Snimljeni su u offline režimu sa izmišljenim nikovima, prije dodavanja „Prilika van škole“ i pojednostavljenja oznaka (u snimku su još stari podcast i „Video montaža“).
+Stara verzija (odjeljenja, offline režim, prilike van škole) je sačuvana pod tagom [`v1-demo`](https://github.com/STEMklub/ConnectEd/tree/v1-demo).
 
 ---
+
+## Tok
+
+1. **Ulaz** (`/#/`): dugme **Uđi**. Bez kucanja: `signInAnonymously()` + jedan kod iz bazena (`claim_demo_code`). Sesija ostaje u pregledaču, pa osvježavanje ne pravi novi nalog.
+2. **Ime:** šest slobodnih imena „pridjev + životinja“ sa slaganjem roda (Zelena Sova, Brzi Delfin) i dugme „Druga imena“. Slobodan unos ne postoji.
+3. **Interesovanja:** 1–4 od 8 oznaka → **Gotovo**.
+4. **Poziv** stiže u odgovoru na „Gotovo“ (ne preko Realtime-a): „**Trebaš nam u robotičkom timu.**“ + „Zašto ti: Robotika“. Dugmad su **Pridružujem se** / **Ne sada**. „Ne sada“ nema posljedica. Ako nema poklapanja, stiže rezervni poziv „STEM klub traži ljude sa idejama“.
+5. **Donja navigacija:** Za tebe · Moji timovi · Profil.
+   - *Za tebe*: poziv na čekanju, timovi po interesovanjima (dugme „Pridruži se“) i ostali timovi.
+   - *Moji timovi*: moji timovi sa članovima; sekundarni link „Imaš ideju? Predloži projekat“ (ide mentoru na odobrenje).
+   - *Profil*: ime, interesovanja, **moj kod** i link **Imam kod** (nastavak istog naloga na drugom telefonu).
+6. **Platno** (`/#/platno`): QR kod, broj učesnika i broj u timovima, trake po timovima i zid „Zelena Sova se pridružuje robotičkom timu“. Samo zbirni brojevi i nikovi.
+7. **Mentor** (`/#/admin`, nik + lozinka): prijave otvorene/zatvorene, moderacija predloga, dodavanje kodova, CSV za štand (broj prijava i pridruživanja po izvoru, bez nikova) i **Resetuj demo**.
+
+**Spajanje** (na serveru, `private.match_invite`): poklapanje oznake projekta sa oznakama učesnika; od više poklapanja bira tim sa manje članova. Kad mentor odobri predlog, pozivi idu prvo onima koji nisu ni u jednom timu (skrivena prednost, ne vidi se u interfejsu ni u API odgovorima). Rezervni poziv dobija samo onaj ko nije u timu.
 
 ## Arhitektura
 
 | Dio | Tehnologija |
 |---|---|
-| Frontend | Vite + React + TypeScript, mobile-first, `HashRouter`, GitHub Pages |
-| Podaci | Supabase: Postgres + Auth + Realtime + Row Level Security na **svim** tabelama |
-| Pisanje | Isključivo kroz RPC funkcije (`security definer`) koje provjeravaju prava |
-| Spajanje | Postgres funkcije u šemi `private` (nije izložena API-ju) + triggeri |
-| Offline | Isti tok iz `localStorage` na jednom uređaju (`src/lib/matching.ts`), uz service worker |
+| Frontend | Vite + React + TypeScript, `HashRouter`, GitHub Pages |
+| Podaci | Supabase (Free): Postgres + anonimni Auth + Realtime; RLS na **svim** tabelama |
+| Pisanje | Isključivo RPC funkcije (`security definer`), pomoćne funkcije u šemi `private` |
+| Realtime | Samo platno i admin (tabela `demo_events`). Telefoni ne otvaraju websocket. Platno i admin se osvježavaju i sami ako websocket padne. |
 
 ```
-supabase/migrations/   0001 šema · 0002 RLS · 0003 spajanje · 0004 RPC · 0005 realtime
-                       0006–0007 ispravke i kodovi · 0008 prilike van škole · 0009 seed prilika (generisano)
-                       0010 pojednostavljenje: 10 oznaka, manje projekata
-supabase/seed.sql      izmišljeni učenici, projekti, kodovi (generisano)
-supabase/setup.sql     sve gore u jednom fajlu, za SQL Editor (generisano)
-src/config/school.ts   škola, smjerovi, odjeljenja, oznake  ← ovdje mijenjate
-scripts/seed-data.ts   seed podaci                         ← ovdje mijenjate
-src/lib/matching.ts    spajanje za offline (mora se slagati sa SQL-om)
-tests/                 paritet SQL↔TS (PGlite), nik, Playwright e2e
+supabase/setup.sql              čista instalacija (cijela baza, seed, 300 kodova)
+supabase/nadogradnja-v1-v2.sql  postojeća v1 baza → v2 (GENERISANO: npm run gen:upgrade)
+src/config/demo.ts              8 oznaka (iste kao u setup.sql; test provjerava)
+src/lib/api.ts                  Supabase klijent, sesija, RPC
+src/screens/                    Entry (ulaz/ime/interesovanja/poziv), ForYou, Teams, Profile, Platno, Admin
+tests/*.test.ts                 SQL testovi nad pravim setup.sql (PGlite + Postgres 16)
+tests/e2e/                      Playwright: telefon 390 px, platno 1920×1080, admin
+tests/server/fake-supabase.ts   lažni Supabase (Auth + RPC nad PGlite) za e2e i lokalni rad
+scripts/load-test.ts            100 klijenata nad pravim Supabase-om
 ```
 
-### Spajanje (`supabase/migrations/0003_matching.sql`)
+**Baza:** `demo_settings`, `demo_codes`, `profiles` (nik, uloga, izvor), `tags`, `profile_tags`, `projects` (naslov, jedna rečenica, rok, oznaka, `join_text`, neograničena mjesta), `memberships`, `invites` (razlog = oznaka, bez skora), `demo_events` (nik + tekst, za zid).
 
-Za svaki otvoren projekat rangira učenike po:
-
-- **poklapanju oznaka** sa potrebama projekta (glavni faktor; *znam* > *volim* > *želim da naučim*). Bez poklapanja nema poziva.
-- **bonusu** ako učenik timu donosi novo odjeljenje ili razred.
-- **prednosti** za učenike koji trenutno nisu ni u jednoj aktivnoj grupi. Uvijek je manja od jedne poklopljene oznake.
-- **ograničenju** od najviše 2 nova poziva u 7 dana po učeniku.
-
-Pokreće se triggerom kad učenik sačuva oznake (novi nalog), kad mentor odobri projekat i kad neko napusti grupu. Skor se nigdje ne upisuje u javne tabele.
-
-`tests/matching.parity.test.ts` pokreće iste SQL migracije u PGlite-u (Postgres u Node-u) i provjerava da SQL i `matching.ts` daju identičan rezultat. Test pokriva seed i 20 nasumičnih stanja.
-
-### Privatnost i RLS (`0002_rls.sql`)
-
-- Niko, pa ni mentor, ne može dobiti spisak svih učenika, pa ni izvesti listu učenika bez grupe. Mentor vidi samo članove timova.
-- Poziv vidi samo pozvani. Vođa ne zna ko je rekao „Ne sada“.
-- „Treba mi pomoć“ čitaju samo mentor i pedagog.
-- Mjerila su samo zbirni brojevi (`get_metrics`).
-- Pristupni kod se troši atomski (`redeem_code`, zaključavanje reda). Iskorišćen kod se ne povezuje sa nalogom.
-- Auth koristi sintetički email `nik@connected.test` (`.test` je rezervisan domen, pošta nikad ne stiže). Bez pravog emaila.
+**RPC:** `claim_demo_code`, `get_me`, `redeem_code`, `suggest_nicks`, `set_nick`, `save_interests`, `respond_invite`, `join_project`, `get_for_you`, `get_my_teams`, `propose_project`, `get_screen` (javno); mentor: `get_admin`, `set_registrations`, `approve_project`, `reset_demo`, `generate_codes`, `export_stand_stats`.
 
 ---
 
-## Postavljanje, korak po korak
+## Postavljanje
 
-### 1. Supabase projekat
-1. Na [supabase.com](https://supabase.com) → **New project**. Ime `connected`, region **Central EU (Frankfurt)**, sačuvajte lozinku baze.
-2. Sačekajte da se projekat podigne (1–2 min).
+### 1. Baza
+U Supabase projektu: **SQL Editor → New query**, zalijepite **cijeli** fajl i kliknite **Run**:
+- baza postavljena starom verzijom (v1): [`supabase/nadogradnja-v1-v2.sql`](supabase/nadogradnja-v1-v2.sql). Briše sve v1 tabele i naloge učenika, a čuva mentorske naloge (npr. `prof.e2e`). Radi u jednoj transakciji.
+- prazan projekat: [`supabase/setup.sql`](supabase/setup.sql).
 
-### 2. Baza: migracije i seed
-> Baza postavljena ranijom verzijom: pokrenite redom fajlove koji nedostaju iz `supabase/migrations/` (`0006` – `0010`). U `setup.sql` su već uključeni.
+Provjera: **Table Editor** prikazuje `projects` (9 redova) i `demo_codes` (300 redova).
 
-1. U projektu otvorite **SQL Editor** → **New query**.
-2. Zalijepite **cijeli** sadržaj fajla [`supabase/setup.sql`](supabase/setup.sql) i kliknite **Run**. Pokreće se jednom, na praznom projektu.
-3. Provjera: **Table Editor** treba da prikaže tabele `profiles` (40 redova), `projects` i ostale.
+### 2. Supabase podešavanja (obavezno prije nastupa)
+1. **Authentication → Sign In / Providers → Allow anonymous sign-ins: UKLJUČITI.** Bez ovoga dugme „Uđi“ ne radi.
+2. **Authentication → Rate Limits → anonimne prijave** (*Anonymous users*): podići na npr. **300 na sat**. Cijela sala dijeli jednu IP adresu, a podrazumijevana granica je niska. **Ovo je najveći rizik za nastup.**
+3. Besplatni projekat se **pauzira nakon 7 dana neaktivnosti**. Dan prije finala otvorite aplikaciju ili uradite reset.
 
-> Koristite li Supabase CLI: `supabase link` pa `supabase db push`, zatim pokrenite `supabase/seed.sql`.
+### 3. Mentorski nalog
+Nadogradnja čuva postojeći `prof.e2e`. Na novom projektu: **Authentication → Users → Add user → Create new user**: email `prof.e2e@connected.test`, lozinka `demo1234`, uključite **Auto Confirm User**. Zatim u SQL Editoru:
+```sql
+select private.make_mentor('prof.e2e');
+```
 
-### 3. Auth: isključite potvrdu emaila
-**Authentication → Sign In / Providers → Email**: isključite **Confirm email** i sačuvajte.
-
-Na takmičenju su svi telefoni na istom WiFi-ju (ista IP adresa). Zato u **Authentication → Rate Limits** podignite „sign-ups and sign-ins“ (npr. na 100 / 5 min).
-
-### 4. Ključevi u GitHub Secrets
-1. U Supabase: **Project Settings → API Keys**. Kopirajte **Project URL** i **Publishable key** (ili *anon public* ključ).
-   Ovaj ključ je javan po dizajnu: završava u aplikaciji, a podatke štiti RLS. **Nikad** ne koristite `service_role` / secret ključ.
-2. U GitHub repou: **Settings → Secrets and variables → Actions → New repository secret**:
-   - `VITE_SUPABASE_URL` = Project URL
-   - `VITE_SUPABASE_ANON_KEY` = Publishable/anon ključ
-
-### 5. GitHub Pages
-**Settings → Pages → Build and deployment → Source: GitHub Actions.** Svaki push na `main` pokreće testove, build i deploy. Link se pojavi u kartici **Actions** i u **Settings → Pages**.
-
-> Ako se repo ne zove `connected`, workflow sam podesi putanju (`VITE_BASE`).
+### 4. GitHub
+- **Settings → Secrets and variables → Actions:** `VITE_SUPABASE_URL` i `VITE_SUPABASE_ANON_KEY` (Publishable/anon ključ; javan je po dizajnu, podatke štiti RLS. **Nikad** `service_role`).
+- **Settings → Pages → Source: GitHub Actions.** Svaki push na `main` pokreće testove, build i deploy. Workflow sam podesi putanju iz imena repoa (`VITE_BASE`).
 
 ### Lokalno
 ```bash
 npm install
-cp .env.example .env.local   # upišite URL i ključ (bez njih radi offline)
-npm run dev
+npm run fake-supabase          # lažni Supabase na :54321 (PGlite, isti setup.sql)
+VITE_SUPABASE_URL=http://localhost:54321 VITE_SUPABASE_ANON_KEY=fake npm run dev
 ```
+Ili sa pravim projektom: `cp .env.example .env.local`, upišite URL i ključ, pa `npm run dev`.
 
 ---
 
-## Demo nalozi
+## Na dan finala
 
-Pristupni kodovi su **četiri cifre** i svaki važi **jednom**. Iz koda se vidi odjeljenje:
-
-**razred · smjer · redni broj** → `3201` = III razred, smjer 2 (turistički tehničar), kod br. 01
-
-| Kodovi | Za |
-|---|---|
-| `1101`–`1110` … `4401`–`4410` | Učenici: po 10 kodova za svako od 16 odjeljenja (160 ukupno) |
-| `9001`–`9005` | Mentori |
-| `8001`–`8002` | Pedagog |
-| `3201` | Učenica A u scenariju (III-2) |
-| `2101` | Učenica B u scenariju (II-1) |
-
-Postojeći mentorski nalog: **`prof.e2e`** / `demo1234` (koristi ga i online test).
-Mentor vidi sve neiskorišćene kodove na ekranu **Mentor**. „Resetuj demo“ ih ponovo oslobađa.
-
-> Četvorocifreni kodovi se lako pogode. To je u redu za demo sa izmišljenim učenicima, ali ne i za pravu upotrebu.
-
----
-
-## Scenario prezentacije (≈ 3 minuta)
-
-**Priprema:** mentor (laptop ili telefon 3) je prijavljen i klikne **Resetuj demo**. Telefoni 1 i 2 imaju otvorenu aplikaciju na početnom ekranu.
-
-1. **Telefon 1, učenica A:** „Imam pristupni kod“ → `3201` → nik → lozinka → oznake: *Znam* → Turizam i ture; *Volim* → Strani jezici → **Sačuvaj profil**.
-   A može dobiti do dva poziva za postojeće projekte (npr. foto-priča, jer voli pisanje). Klikne „Ne sada“: to pokazuje da odbijanje nema posljedica.
-   **Pokreni projekat:** „Promo video za Dan otvorenih vrata traži snimatelja“, cilj, oznaka *Foto i video* → **Pošalji na odobrenje**.
-2. **Laptop, mentor:** projekat se sam pojavi pod „Na odobrenju“ → **✓ Odobri**.
-3. **Telefon 2, učenica B:** `2101` → nik → lozinka → *Znam* → **Foto i video** → Sačuvaj.
-   **Poziv stiže odmah:** „Trebaš nam. Promo video za Dan otvorenih vrata traži snimatelja. Zašto ti: znaš · Foto i video“ → **Pridružujem se** 🎉
-4. **Telefon 1:** A odmah dobije obavještenje „… se pridružio/la timu 🎉“, a B je na zidu tima.
-   **Laptop:** mjerilo „prešlo sa 0 na 1 grupu“ poraste uživo.
-5. **Resetuj demo** vraća sve za sljedeću probu: kodovi su ponovo slobodni, a nalozi A i B se brišu.
-
-### Ako nema interneta: Offline demo
-Na početnom ekranu (ili u Profilu) uključite **Offline demo**. Isti scenario radi na **jednom** uređaju, a ikonica ⇄ u zaglavlju je **Prebaci nalog**:
-A napravi nalog i projekat → ⇄ **Profesorka** (mentor) → Odobri → ⇄ **Novi nalog** → B → poziv → ⇄ A.
-
-Aplikacija se otvara i bez interneta ako je na tom uređaju **bar jednom otvorena online** (service worker). Prije takmičenja otvorite link na svakom uređaju.
+1. **Dan prije:** otvorite aplikaciju (da se projekat ne pauzira) i provjerite podešavanja iz koraka 2.
+2. **Prije nastupa:** `/#/admin` → **Resetuj demo**. Na projektor otvorite `/#/platno` (F11 za cijeli ekran).
+3. **Nastup:** publika skenira QR sa platna. Brojevi, trake i zid se mijenjaju uživo.
+4. **Štand:** QR sa `/#/platno?izvor=stand`. CSV u adminu daje broj prijava i pridruživanja po izvoru.
+5. Ako treba zaustaviti nove prijave: prekidač **Prijave** u adminu. Ko je već unutra, nastavlja.
 
 ---
 
 ## Testovi
 
 ```bash
-npm test                    # paritet spajanja SQL ↔ TS (PGlite), nik, zabranjene riječi
-npm run test:e2e:offline    # Playwright: cijeli scenario offline (jedan browser kontekst)
-E2E_BASE_URL=https://snezaaaa.github.io/connected/ npm run test:e2e:online
-                            # Playwright nad objavljenom aplikacijom: dva odvojena konteksta (A, B)
-                            # + mentor, uživo preko Realtime. Na početku i kraju RESETUJE demo.
-                            # (ili lokalni build: E2E_SUPABASE_URL=… E2E_SUPABASE_ANON_KEY=…)
+npm test                 # SQL nad pravim setup.sql (PGlite): svih 162 kombinacija 1–4 oznake dobija poziv,
+                         # kodovi, „Imam kod“, RLS i prava, reset, moderacija, nadogradnja v1→v2
+PG_TEST_URL=postgres://postgres@localhost:5432/postgres npm test
+                         # + 100 istovremenih claim_demo_code nad pravim Postgres-om (atomičnost kodova)
+npm run test:e2e         # Playwright nad lažnim Supabase-om: telefon 390 px, platno 1920×1080,
+                         # admin (prijave, moderacija, CSV, reset), izvor stand
+E2E_BASE_URL=https://stemklub.github.io/ConnectEd/ npm run test:e2e
+                         # isto nad objavljenom aplikacijom i pravim Supabase-om (RESETUJE demo!)
 ```
 
-## Prilagođavanje
-- **Smjerovi, odjeljenja, oznake:** `src/config/school.ts`. Nakon izmjene pokrenite `npm run gen:seed && npm run gen:setup`.
-- **Izmišljeni učenici i projekti:** `scripts/seed-data.ts`, pa iste komande.
-- **Težine spajanja:** `src/lib/matching.ts` **i** `0003_matching.sql`. Test pariteta pada ako se razlikuju.
+**Load test** (pravi Supabase; na početku i na kraju resetuje demo):
+```bash
+SUPABASE_URL=https://<projekat>.supabase.co SUPABASE_ANON_KEY=<publishable ključ> npm run load-test
+```
+100 klijenata istovremeno: anonimna prijava → kod → nik → oznake → poziv → prihvati. Prolazi ako nema grešaka i ako je p95 vremena do poziva (odgovor na „Gotovo“) ispod 3 s. Opcije: `N`, `RAMP_MS`, `RESET`, `P95_LIMIT_MS`, `MENTOR_NICK`, `MENTOR_PASS`. Ako padne na `signInAnonymously` sa „rate limit“, podignite granicu iz koraka 2.
 
-## Napomene
-- Za offline režim aplikacija sadrži `matching.ts`, pa je pravilo prednosti vidljivo u izvornom kodu (repo je ionako javan). U interfejsu i u API odgovorima se ne pojavljuje.
-- „Treba mi pomoć“ je u ovoj verziji demonstracija. U pravoj školi signal bi išao školskom pedagogu.
+## Prilagođavanje
+- **Oznake:** `src/config/demo.ts` **i** `private.load_seed()` u `supabase/setup.sql` (test pada ako se razlikuju). Zatim `npm run gen:upgrade`.
+- **Projekti:** `private.load_seed()` u `setup.sql`. Svaka oznaka treba bar jedan otvoren projekat; `join_text` dopunjuje „Trebaš nam u …“.
+- **Broj kodova:** dugme „Dodaj kodove“ u adminu (300 na početku).
 
 Licenca: MIT

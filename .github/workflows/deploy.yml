@@ -1,8 +1,7 @@
-name: Build i deploy na GitHub Pages
+name: Testovi, build i deploy na GitHub Pages
 
 on:
   push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -11,11 +10,33 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: SQL testovi (PGlite + istovremenost kodova na Postgres 16)
+        run: npm test
+        env:
+          PG_TEST_URL: postgres://postgres:postgres@localhost:5432/postgres
+
+  e2e:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -24,8 +45,27 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Testovi (paritet spajanja SQL ↔ TS, nik)
-        run: npm test
+      - run: npx playwright install --with-deps chromium
+      - name: Playwright (telefon 390 px, platno 1920×1080, admin) nad lažnim Supabase-om
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-snimci
+          path: test-results/
+          if-no-files-found: ignore
+
+  build:
+    if: github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
       - name: Build
         run: npm run build
         env:
@@ -38,6 +78,7 @@ jobs:
           path: dist
 
   deploy:
+    if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     environment:
@@ -46,16 +87,3 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
-
-  e2e-offline:
-    # Ne blokira deploy: provjerava cijeli scenario u offline režimu.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e:offline
