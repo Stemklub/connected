@@ -1,19 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
-import type { Change, DataSource, Me } from './data/types'
-
-type Listener = (c: Change, payload?: { project_id?: string }) => void
+import type { Me } from './lib/api'
 
 interface Ctx {
-  ds: DataSource
   me: Me | null
   setMe: (m: Me | null) => void
-  on: (l: Listener) => () => void
-  emitLocal: (c: Change) => void
   toast: (msg: string, icon?: string) => void
   confetti: () => void
-  /** Dok je true, kartica poziva „Trebaš nam“ se ne prikazuje (npr. na „Van škole“). */
-  inviteHold: boolean
-  setInviteHold: (on: boolean) => void
 }
 
 const AppCtx = createContext<Ctx | null>(null)
@@ -23,29 +15,12 @@ export const useApp = () => {
   return c
 }
 
-export function AppProvider({ ds, initialMe, children }: { ds: DataSource; initialMe: Me | null; children: ReactNode }) {
+export function AppProvider({ initialMe, children }: { initialMe: Me | null; children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(initialMe)
-  const listeners = useRef(new Set<Listener>())
   const [toastMsg, setToastMsg] = useState<{ msg: string; icon: string; k: number } | null>(null)
   const [burst, setBurst] = useState(0)
-  const [inviteHold, setInviteHold] = useState(false)
 
-  const on = useCallback((l: Listener) => {
-    listeners.current.add(l)
-    return () => void listeners.current.delete(l)
-  }, [])
-  const fire = useCallback<Listener>((c, p) => {
-    for (const l of listeners.current) l(c, p)
-  }, [])
-
-  useEffect(() => {
-    if (!me) return
-    return ds.subscribe(me, fire)
-  }, [ds, me?.id, fire]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const toast = useCallback((msg: string, icon = '✨') => {
-    setToastMsg({ msg, icon, k: Date.now() })
-  }, [])
+  const toast = useCallback((msg: string, icon = '✨') => setToastMsg({ msg, icon, k: Date.now() }), [])
   useEffect(() => {
     if (!toastMsg) return
     const t = setTimeout(() => setToastMsg(null), 4200)
@@ -60,7 +35,7 @@ export function AppProvider({ ds, initialMe, children }: { ds: DataSource; initi
   }, [burst])
 
   return (
-    <AppCtx.Provider value={{ ds, me, setMe, on, emitLocal: (c) => fire(c), toast, confetti, inviteHold, setInviteHold }}>
+    <AppCtx.Provider value={{ me, setMe, toast, confetti }}>
       {children}
       {toastMsg && (
         <div className="toast" role="status" key={toastMsg.k} onClick={() => setToastMsg(null)}>
@@ -81,32 +56,25 @@ export function AppProvider({ ds, initialMe, children }: { ds: DataSource; initi
   )
 }
 
-/** Učitava podatke i ponovo ih učitava kad stigne neka od navedenih promjena (Realtime ili offline). */
-export function useLive<T>(load: () => Promise<T>, changes: Change[], deps: unknown[] = []) {
-  const { on } = useApp()
+/** Učitava podatke; reload() ponovo učitava. */
+export function useLoad<T>(load: () => Promise<T>, deps: unknown[] = []) {
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [loaded, setLoaded] = useState(false)
   const loadRef = useRef(load)
   loadRef.current = load
-  const reload = useCallback(() => {
-    loadRef.current().then(
-      (d) => {
-        setData(d)
-        setError(null)
-        setLoaded(true)
-      },
-      (e: Error) => {
-        setError(e.message)
-        setLoaded(true)
-      },
-    )
-  }, [])
+  const reload = useCallback(
+    () =>
+      loadRef.current().then(
+        (d) => {
+          setData(d)
+          setError(null)
+        },
+        (e: Error) => setError(e.message),
+      ),
+    [],
+  )
   useEffect(() => {
-    reload()
-    return on((c) => {
-      if (changes.includes(c)) reload()
-    })
+    void reload()
   }, deps) // eslint-disable-line react-hooks/exhaustive-deps
-  return { data, error, loaded, reload }
+  return { data, error, reload, setData }
 }

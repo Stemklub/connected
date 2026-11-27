@@ -69,19 +69,16 @@ input, textarea, select { font: inherit; color: var(--ink); }
 .brand { display: flex; align-items: center; gap: 8px; text-decoration: none; color: var(--ink); min-width: 0; }
 .brand img { width: 30px; height: 30px; }
 .brand b { font-family: var(--head); font-weight: 800; font-size: 19px; letter-spacing: -0.02em; }
-.brand .school { font-size: 10.5px; color: var(--ink-3); line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
 .header .spacer { flex: 1; }
 .icon-btn {
   width: 40px; height: 40px; border-radius: 12px; border: 0; background: transparent;
   display: grid; place-items: center; position: relative; color: var(--ink);
 }
 .icon-btn:active { background: var(--violet-soft); }
-.dot { position: absolute; top: 8px; right: 8px; width: 9px; height: 9px; border-radius: 50%; background: #ef4444; border: 2px solid var(--bg); }
 .demo-pill {
   font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
   padding: 3px 7px; border-radius: 999px; background: var(--amber-soft); color: #8a5a00; white-space: nowrap;
 }
-.demo-pill.off { background: #e0ecff; color: #234e9c; }
 
 /* ── Donja navigacija ──────────────────────────── */
 .nav {
@@ -121,13 +118,6 @@ input, textarea, select { font: inherit; color: var(--ink); }
 .badge.grey { background: #eeedf3; color: var(--ink-2); }
 .badge.grad { background: var(--grad); color: #fff; }
 
-.result-card .result { margin-top: 8px; font-size: 14px; color: var(--ink-2); }
-.result-card .names { margin-top: 8px; font-size: 13px; color: var(--ink-2); }
-.result-banner {
-  height: 86px; border-radius: 14px; margin: -2px 0 10px;
-  background: linear-gradient(135deg, #ffd66b, #ff8fb1 45%, #7c3aed 75%, #4a7bea);
-  display: grid; place-items: center; font-size: 40px;
-}
 
 /* ── Dugmad i polja ────────────────────────────── */
 .btn {
@@ -168,33 +158,7 @@ textarea.input { resize: vertical; min-height: 84px; }
 .chip.on { border-color: var(--violet); background: var(--violet-soft); color: var(--ink); }
 .chip .k { font-size: 10.5px; font-weight: 700; color: #fff; background: var(--violet); border-radius: 999px; padding: 1px 6px; }
 .chip.small { padding: 4px 9px; font-size: 12.5px; border-radius: 10px; }
-.seg { display: grid; grid-template-columns: repeat(3, 1fr); background: #e9e7f1; border-radius: 14px; padding: 4px; gap: 4px; }
-.seg button { border: 0; background: transparent; border-radius: 10px; padding: 9px 4px; font-weight: 700; font-size: 13.5px; color: var(--ink-2); }
-.seg button.on { background: #fff; color: var(--violet); box-shadow: var(--shadow); }
 
-.filters { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
-.filters button { border: 0; background: #fff; border-radius: 999px; padding: 8px 14px; font-weight: 600; font-size: 14px; white-space: nowrap; box-shadow: var(--shadow); }
-.filters button.on { background: var(--violet); color: #fff; }
-
-/* ── Grupa / zid ───────────────────────────────── */
-.progress { height: 10px; background: #ebe8f4; border-radius: 999px; overflow: hidden; }
-.progress > i { display: block; height: 100%; background: var(--grad); border-radius: 999px; }
-.members { display: flex; flex-wrap: wrap; gap: 6px; }
-.member { display: inline-flex; align-items: center; gap: 6px; background: #f6f5fa; border-radius: 999px; padding: 4px 10px 4px 4px; font-size: 13.5px; font-weight: 600; }
-.avatar { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 12px; font-weight: 800; background: var(--grad); flex: none; }
-.wall { display: flex; flex-direction: column; gap: 8px; }
-.post { background: #f7f6fb; border-radius: 14px; padding: 10px 12px; }
-.post.system { background: var(--green-soft); color: #14532d; font-weight: 600; font-size: 14px; }
-.post.fresh { animation: fresh 1.6s ease-out; }
-.post .who { font-size: 12.5px; font-weight: 700; color: var(--violet); }
-.composer { display: flex; gap: 8px; }
-.composer .input { padding: 11px 12px; }
-
-.info-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.info { background: #f7f6fb; border-radius: 14px; padding: 10px 6px; text-align: center; }
-.info .ic { font-size: 18px; }
-.info b { display: block; font-size: 13px; }
-.info span { font-size: 12px; color: var(--ink-2); }
 
 /* ── Mentor ────────────────────────────────────── */
 .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -204,13 +168,6 @@ textarea.input { resize: vertical; min-height: 84px; }
 .metric.hero { background: var(--grad); color: #fff; }
 .metric.hero span { color: rgba(255, 255, 255, 0.9); }
 .metric.bump { animation: bump 0.9s ease-out; }
-.codes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.codes code { font-family: var(--head); font-weight: 700; font-size: 13px; background: #f6f5fa; padding: 6px 8px; border-radius: 10px; display: flex; justify-content: space-between; gap: 4px; }
-.codes code span { color: var(--ink-3); font-weight: 600; }
-.code-row { background: #fff; border-radius: 14px; padding: 10px 12px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 6px; }
-.code-row b { font-family: var(--head); font-size: 13px; color: var(--ink-2); }
-.code-row .chips { gap: 5px; }
-.code-row code { font-family: var(--head); font-weight: 700; font-size: 14px; background: var(--violet-soft); color: var(--ink); padding: 4px 8px; border-radius: 8px; letter-spacing: 0.04em; }
 .section-title { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
 
 /* ── Poziv (glavni trenutak) ───────────────────── */
@@ -220,7 +177,7 @@ textarea.input { resize: vertical; min-height: 84px; }
   animation: fade 0.25s ease-out;
 }
 .invite {
-  width: 100%; max-width: 440px; background: #fff; border-radius: 28px; padding: 22px 18px 18px;
+  width: 100%; background: #fff; border-radius: 28px; padding: 22px 18px 18px;
   text-align: center; position: relative; overflow: hidden;
   animation: rise 0.55s cubic-bezier(0.2, 0.9, 0.25, 1.15);
   box-shadow: 0 30px 80px rgba(27, 20, 70, 0.35);
@@ -256,13 +213,6 @@ textarea.input { resize: vertical; min-height: 84px; }
 .confetti { position: fixed; inset: 0; pointer-events: none; z-index: 90; overflow: hidden; }
 .confetti i { position: absolute; top: -20px; font-style: normal; font-size: 22px; animation: fall 1.8s ease-in forwards; }
 
-.menu {
-  position: absolute; right: 12px; top: 54px; z-index: 50; background: #fff; border-radius: 16px; box-shadow: 0 16px 40px rgba(27, 20, 70, 0.2);
-  padding: 6px; min-width: 220px; display: flex; flex-direction: column;
-}
-.menu button { border: 0; background: transparent; text-align: left; padding: 10px 12px; border-radius: 10px; font-size: 15px; display: flex; gap: 8px; align-items: center; }
-.menu button:active, .menu button.on { background: var(--violet-soft); }
-.menu .lbl { font-size: 11px; color: var(--ink-3); padding: 6px 12px 2px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
 
 .hero-logo { width: min(78%, 300px); margin: 0 auto; display: block; }
 .empty { text-align: center; color: var(--ink-3); padding: 24px 8px; font-size: 15px; }
@@ -274,12 +224,6 @@ textarea.input { resize: vertical; min-height: 84px; }
 .switch input::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: left 0.2s; }
 .switch input:checked { background: var(--violet); }
 .switch input:checked::after { left: 23px; }
-.emoji-pick { display: flex; flex-wrap: wrap; gap: 6px; }
-.emoji-pick button { width: 42px; height: 42px; border-radius: 12px; border: 1.5px solid var(--line); background: #fff; font-size: 20px; }
-.emoji-pick button.on { border-color: var(--violet); background: var(--violet-soft); }
-.stepper { display: flex; align-items: center; gap: 12px; }
-.stepper button { width: 40px; height: 40px; border-radius: 12px; border: 1.5px solid var(--line); background: #fff; font-size: 20px; font-weight: 700; }
-.stepper b { font-family: var(--head); font-size: 20px; min-width: 24px; text-align: center; }
 .spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--violet-soft); border-top-color: var(--violet); animation: spin 0.8s linear infinite; margin: 40px auto; }
 
 @keyframes fade { from { opacity: 0; } }
@@ -293,8 +237,75 @@ textarea.input { resize: vertical; min-height: 84px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 
-/* ── Prilike van škole ─────────────────────────── */
-.ptile.opp { background: linear-gradient(135deg, #e0ecff, #efe8fd); }
-.opp-kind { font-size: 11.5px; font-weight: 700; color: var(--blue); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px; }
-.opp-card.for-me { box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.35), var(--shadow); }
-.badge.forme { background: linear-gradient(120deg, #efe8fd, #e0ecff); color: var(--violet); }
+
+/* ── v2: ulaz, interesovanja, nikovi ───────────── */
+.btn.big { padding: 18px 20px; font-size: 18px; border-radius: 16px; }
+.sticky-cta { position: sticky; bottom: 16px; margin-top: 4px; }
+.tag-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tag {
+  border: 1.5px solid var(--line); background: #fff; border-radius: 16px; padding: 14px 12px; min-height: 64px;
+  display: flex; align-items: center; gap: 10px; text-align: left; font-weight: 600; font-size: 15px; line-height: 1.2;
+  position: relative; transition: transform 0.1s, border-color 0.15s;
+}
+.tag .ti { font-size: 24px; flex: none; }
+.tag.on { border-color: var(--violet); background: var(--violet-soft); }
+.tag:active { transform: scale(0.97); }
+.tag:disabled { opacity: 0.45; }
+.tag .tick { position: absolute; top: 6px; right: 8px; color: var(--violet); font-weight: 800; font-size: 13px; }
+.nick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; min-height: 120px; }
+.nick {
+  border: 1.5px solid var(--line); background: #fff; border-radius: 16px; padding: 16px 10px;
+  font-family: var(--head); font-weight: 700; font-size: 16px; box-shadow: var(--shadow);
+}
+.nick.on { border-color: var(--violet); background: var(--violet-soft); }
+.nick:active { transform: scale(0.97); }
+.code-big { font-family: var(--head); font-weight: 800; font-size: 30px; letter-spacing: 0.18em; color: var(--ink); }
+.reveal { padding-top: 24px; }
+.invite { box-shadow: 0 20px 60px rgba(27, 20, 70, 0.18); }
+.invite h1 { font-size: 28px; }
+.team .t { font-size: 16px; }
+.admin .metric b { font-size: 26px; }
+
+/* ── Platno (1920×1080, radi i na manjim ekranima) ── */
+.screen {
+  min-height: 100vh; background: radial-gradient(1200px 700px at 85% -10%, rgba(124, 58, 237, 0.45), transparent 60%),
+    radial-gradient(900px 600px at -10% 110%, rgba(74, 123, 234, 0.35), transparent 60%), var(--ink);
+  color: #fff; display: grid; grid-template-columns: minmax(320px, 26vw) 1fr minmax(360px, 30vw);
+  gap: 3vw; padding: 4vh 3vw; box-sizing: border-box; overflow: hidden;
+}
+.screen-left { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2.2vh; text-align: center; }
+.screen-logo { width: 78%; filter: brightness(0) invert(1); }
+.screen-slogan { font-size: clamp(28px, 2.6vw, 54px); font-weight: 800; line-height: 1.1; }
+.qr { background: #fff; padding: 1.4vw; border-radius: 28px; width: min(22vw, 42vh); aspect-ratio: 1; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35); }
+.qr svg { width: 100%; height: 100%; display: block; }
+.screen-url { font-size: clamp(14px, 1.15vw, 24px); font-weight: 600; color: rgba(255, 255, 255, 0.85); word-break: break-all; }
+.screen-closed { background: #fff4dc; color: #8a5a00; font-weight: 800; padding: 10px 18px; border-radius: 999px; font-size: clamp(16px, 1.2vw, 24px); }
+.screen-mid { display: flex; flex-direction: column; gap: 4vh; justify-content: center; min-width: 0; }
+.counters { display: grid; grid-template-columns: 1fr 1fr; gap: 2vw; }
+.counter { background: rgba(255, 255, 255, 0.08); border-radius: 28px; padding: 3vh 2vw; }
+.counter b { display: block; font-family: var(--head); font-weight: 800; font-size: clamp(56px, 7vw, 150px); line-height: 1; }
+.counter span { font-size: clamp(16px, 1.4vw, 30px); color: rgba(255, 255, 255, 0.8); font-weight: 600; }
+.counter.accent { background: var(--grad); }
+.bars { display: flex; flex-direction: column; gap: 1.4vh; }
+.bar { display: grid; grid-template-columns: 2.4vw minmax(0, 2.2fr) 1fr 3vw; align-items: center; gap: 1vw; font-size: clamp(14px, 1.15vw, 24px); }
+.bar .bi { font-size: clamp(20px, 1.6vw, 34px); }
+.bar .bt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.bar .bb { height: 1.6vh; min-height: 10px; background: rgba(255, 255, 255, 0.1); border-radius: 999px; overflow: hidden; }
+.bar .bb i { display: block; height: 100%; background: var(--grad); border-radius: 999px; transition: width 0.8s cubic-bezier(0.2, 0.9, 0.25, 1); min-width: 6px; }
+.bar .bn { font-family: var(--head); font-size: clamp(18px, 1.5vw, 32px); text-align: right; }
+.bar.fallback { opacity: 0.75; }
+.screen-wall { background: rgba(255, 255, 255, 0.06); border-radius: 28px; padding: 3vh 1.6vw; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.screen-wall h2 { font-size: clamp(20px, 1.6vw, 34px); display: flex; align-items: center; gap: 12px; margin-bottom: 2vh; }
+.live-dot { width: 14px; height: 14px; border-radius: 50%; background: #8a86a3; }
+.live-dot.on { background: #22c55e; box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.25); animation: pulse 1.6s ease-in-out infinite; }
+.screen-wall ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1.2vh; }
+.screen-wall li { background: rgba(255, 255, 255, 0.08); border-radius: 18px; padding: 1.4vh 1vw; font-size: clamp(15px, 1.2vw, 26px); line-height: 1.3; }
+.screen-wall li b { color: #c4b5fd; }
+.screen-wall li .ago { float: right; font-size: 0.7em; color: rgba(255, 255, 255, 0.5); margin-left: 8px; }
+.screen-wall li.fresh { animation: slidein 0.6s cubic-bezier(0.2, 0.9, 0.25, 1.1); background: rgba(124, 58, 237, 0.35); }
+.screen-empty, .screen-err { color: rgba(255, 255, 255, 0.7); font-size: clamp(15px, 1.2vw, 24px); }
+@keyframes slidein { from { transform: translateX(40px); opacity: 0; } }
+@media (max-width: 900px) {
+  .screen { grid-template-columns: 1fr; overflow: visible; }
+  .qr { width: min(70vw, 320px); }
+}

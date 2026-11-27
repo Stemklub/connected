@@ -15,26 +15,36 @@ import '@fontsource/plus-jakarta-sans/latin-ext-800.css'
 import './styles.css'
 import App from './App'
 import { AppProvider } from './state'
-import { getSource } from './data'
+import { loadMe, type Me } from './lib/api'
+
+// v1 je imao service worker (offline režim). Odjavi ga i obriši njegov keš,
+// da stari telefoni ne bi zauvijek prikazivali staru verziju.
+if ('serviceWorker' in navigator) {
+  void navigator.serviceWorker
+    .getRegistrations()
+    .then((regs) => Promise.all(regs.map((r) => r.unregister())))
+    .catch(() => {})
+}
+if ('caches' in window) {
+  void caches
+    .keys()
+    .then((keys) => Promise.all(keys.filter((k) => k.startsWith('ce-')).map((k) => caches.delete(k))))
+    .catch(() => {})
+}
 
 const root = createRoot(document.getElementById('root')!)
 
 async function boot() {
-  const ds = await getSource()
-  const me = await ds.currentUser().catch(() => null)
+  // Platno ne treba nalog; ostali ekrani učitavaju sačuvanu sesiju.
+  const isScreen = location.hash.startsWith('#/platno')
+  let me: Me | null = null
+  if (!isScreen) me = await loadMe().catch(() => null)
   root.render(
     <StrictMode>
-      <AppProvider ds={ds} initialMe={me}>
+      <AppProvider initialMe={me}>
         <App />
       </AppProvider>
     </StrictMode>,
   )
 }
 void boot()
-
-// Service worker: aplikacija se otvara i bez interneta (za „Offline demo“).
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  window.addEventListener('load', () => {
-    void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`)
-  })
-}
