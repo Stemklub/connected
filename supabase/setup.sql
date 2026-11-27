@@ -1,26 +1,27 @@
--- ConnectEd: sve migracije + seed u jednom fajlu (GENERISANO: npm run gen:setup).
--- Zalijepite cijeli sadržaj u Supabase → SQL Editor → Run. Pokreće se JEDNOM na praznom projektu.
-
--- >>> migrations/0001_schema.sql
 -- ═════════════════════════════════════════════════════════════
---  ConnectEd · 0001 · Šema
+--  ConnectEd v2 · čista instalacija
+--  Supabase → SQL Editor → zalijepite CIJELI fajl → Run.
+--  Postojeća v1 baza: pokrenite nadogradnja-v1-v2.sql (ne ovaj fajl).
+--
+--  Pravila:
+--   • RLS je uključen na SVIM tabelama. Klijent ne čita tabele direktno
+--     (osim public.demo_events, za zid platna i Realtime).
+--   • Sve izmjene idu kroz RPC funkcije (security definer) koje provjeravaju prava.
+--   • Spajanje radi na serveru: poklapanje oznaka + skrivena prednost za one bez tima.
 -- ═════════════════════════════════════════════════════════════
 
 create schema if not exists private;
 revoke all on schema private from public;
 
-create type public.user_role as enum ('student', 'mentor', 'pedagog');
-create type public.tag_kind as enum ('volim', 'znam', 'ucim');
-create type public.project_status as enum ('pending', 'open', 'done', 'rejected');
-create type public.invite_status as enum ('pending', 'accepted', 'declined', 'expired');
+-- ── Tabele ───────────────────────────────────────────────────
 
-create table public.classes (
-  id     text primary key,          -- "3-2"
-  razred int  not null check (razred between 1 and 4),
-  smjer  text not null,
-  label  text not null              -- "III-2"
+create table public.demo_settings (
+  id                 int primary key default 1 check (id = 1),
+  registrations_open boolean not null default true,
+  reset_at           timestamptz not null default now()
 );
 
+-- Oznake: iste kao src/config/demo.ts (test provjerava).
 create table public.tags (
   slug  text primary key,
   label text not null,
@@ -28,2907 +29,705 @@ create table public.tags (
   sort  int  not null
 );
 
--- Pristupni kodovi. Iskorišćen kod se NE povezuje sa nalogom.
-create table public.access_codes (
-  code     text primary key,
-  role     public.user_role not null,
-  class_id text references public.classes (id),
-  used_at  timestamptz
+-- Profil: samo nik iz ponuđenog skupa, uloga i izvor prijave. Bez imena i emaila.
+create table public.profiles (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid unique references auth.users (id) on delete cascade,
+  nick       text unique,
+  role       text not null default 'student' check (role in ('student', 'mentor')),
+  source     text check (source in ('stand', 'finale')),
+  created_at timestamptz not null default now()
 );
 
--- Profil: samo nik, uloga i odjeljenje. Bez imena i emaila.
-create table public.profiles (
-  id           uuid primary key default gen_random_uuid(),
-  user_id      uuid unique references auth.users (id) on delete cascade, -- null za izmišljene učenike iz seeda
-  nick         text not null,
-  nick_norm    text not null unique,
-  role         public.user_role not null default 'student',
-  class_id     text references public.classes (id),
-  onboarded    boolean not null default false,
-  tags_version int not null default 0,
-  is_seed      boolean not null default false,
-  created_at   timestamptz not null default now()
+-- Kodovi: svaki nalog dobija jedan (claim_demo_code). Kodom se nalog nastavlja na drugom uređaju.
+create table public.demo_codes (
+  code    text primary key,
+  used_at timestamptz,
+  used_by uuid unique references public.profiles (id) on delete set null
 );
+create index demo_codes_free on public.demo_codes (code) where used_at is null;
 
 create table public.profile_tags (
   profile_id uuid not null references public.profiles (id) on delete cascade,
   tag        text not null references public.tags (slug),
-  kind       public.tag_kind not null,
   primary key (profile_id, tag)
 );
+create index on public.profile_tags (tag);
 
+-- Projekti: naslov, jedna rečenica, rok, jedna oznaka. Mjesta su neograničena.
+-- join_text dopunjuje „Trebaš nam u …“ / „… se pridružuje …“ (npr. „robotičkom timu“).
 create table public.projects (
-  id           uuid primary key default gen_random_uuid(),
-  title        text not null check (char_length(title) between 3 and 80),
-  goal         text not null check (char_length(goal) between 1 and 300),
-  deadline     date,
-  spots        int  not null default 2 check (spots between 1 and 8),
-  icon         text not null default '✨',
-  status       public.project_status not null default 'pending',
-  leader_id    uuid not null references public.profiles (id) on delete cascade,
-  result_text  text check (char_length(result_text) <= 400),
-  created_at   timestamptz not null default now(),
-  approved_at  timestamptz,
-  completed_at timestamptz
+  id          uuid primary key default gen_random_uuid(),
+  title       text not null check (char_length(title) between 3 and 60),
+  sentence    text not null check (char_length(sentence) between 3 and 140),
+  deadline    date,
+  tag         text references public.tags (slug),
+  join_text   text not null check (char_length(join_text) between 3 and 80),
+  status      text not null default 'pending' check (status in ('pending', 'open', 'rejected')),
+  is_fallback boolean not null default false,
+  is_seed     boolean not null default false,
+  proposed_by uuid references public.profiles (id) on delete cascade,
+  created_at  timestamptz not null default now(),
+  approved_at timestamptz
 );
-create index on public.projects (status);
-create index on public.projects (leader_id);
+create index on public.projects (status, tag);
 
-create table public.project_tags (
-  project_id uuid not null references public.projects (id) on delete cascade,
-  tag        text not null references public.tags (slug),
-  primary key (project_id, tag)
-);
-
-create table public.group_members (
+create table public.memberships (
   project_id uuid not null references public.projects (id) on delete cascade,
   profile_id uuid not null references public.profiles (id) on delete cascade,
   joined_at  timestamptz not null default now(),
-  left_at    timestamptz,
   primary key (project_id, profile_id)
 );
-create index on public.group_members (profile_id);
+create index on public.memberships (profile_id);
 
--- Poziv. Skor se NE čuva ovdje (samo razlog: oznaka i vrsta).
+-- Poziv: razlog je oznaka (null = rezervni poziv). Bez skora.
 create table public.invites (
   id           uuid primary key default gen_random_uuid(),
   project_id   uuid not null references public.projects (id) on delete cascade,
   profile_id   uuid not null references public.profiles (id) on delete cascade,
-  reason_tag   text not null references public.tags (slug),
-  reason_kind  public.tag_kind not null,
-  status       public.invite_status not null default 'pending',
+  reason_tag   text references public.tags (slug),
+  status       text not null default 'pending' check (status in ('pending', 'accepted', 'declined')),
   created_at   timestamptz not null default now(),
   responded_at timestamptz,
   unique (project_id, profile_id)
 );
-create index on public.invites (profile_id, created_at);
+create index on public.invites (profile_id, status);
 
-create table public.wall_posts (
-  id         uuid primary key default gen_random_uuid(),
-  project_id uuid not null references public.projects (id) on delete cascade,
-  author_id  uuid references public.profiles (id) on delete set null,
-  kind       text not null default 'post' check (kind in ('post', 'system')),
-  body       text not null check (char_length(body) between 1 and 500),
+-- Zid platna: samo nik i tekst. Javno čitljivo (Realtime za platno i admin).
+create table public.demo_events (
+  id         bigint generated always as identity primary key,
+  nick       text not null,
+  text       text not null,
   created_at timestamptz not null default now()
 );
-create index on public.wall_posts (project_id, created_at);
 
-create table public.notifications (
-  id         uuid primary key default gen_random_uuid(),
-  profile_id uuid not null references public.profiles (id) on delete cascade,
-  kind       text not null,
-  project_id uuid references public.projects (id) on delete cascade,
-  body       text not null,
-  read_at    timestamptz,
-  created_at timestamptz not null default now()
+-- Neuspjeli pokušaji „Imam kod“ (zaštita od pogađanja).
+create table private.code_attempts (
+  user_id uuid not null,
+  at      timestamptz not null default now()
 );
-create index on public.notifications (profile_id, created_at);
-
-create table public.help_signals (
-  id         uuid primary key default gen_random_uuid(),
-  profile_id uuid not null references public.profiles (id) on delete cascade,
-  note       text check (char_length(note) <= 300),
-  created_at timestamptz not null default now(),
-  handled_at timestamptz
-);
-
-create table public.demo_meta (
-  id       int primary key default 1 check (id = 1),
-  reset_at timestamptz not null default now()
-);
-insert into public.demo_meta (id) values (1);
-
--- Privatno: nije izloženo API-ju.
-create table private.first_group_events (
-  profile_id uuid not null,
-  at         timestamptz not null default now()
-);
-
--- ─── Nik ────────────────────────────────────────────────────
--- Ista pravila kao src/lib/nick.ts
-create or replace function private.normalize_nick(n text)
-returns text language sql immutable set search_path = '' as $$
-  select replace(translate(lower(btrim(n)), 'ČĆŠŽĐčćšž', 'ccszđccsz'), 'đ', 'dj')
-$$;
-
-create or replace function private.nick_problem(n text)
-returns text language plpgsql immutable set search_path = '' as $$
-declare
-  flat text;
-  w text;
-  blocked text[] := array[
-    'kurac', 'kurc', 'picka', 'pizda', 'jeb', 'govno', 'sranje', 'kurva', 'peder',
-    'drolj', 'smrad', 'debil', 'kreten', 'retard', 'idiot', 'mrtav', 'ubij', 'nazi', 'hitler',
-    'fuck', 'shit', 'bitch', 'dick', 'cock', 'pussy', 'porn', 'sex', 'seks', 'nigg',
-    'admin', 'moderator', 'mentor', 'pedagog', 'connected', 'skola'
-  ];
-begin
-  if n is null or char_length(btrim(n)) < 3 then return 'Nik treba da ima bar 3 znaka.'; end if;
-  if char_length(btrim(n)) > 20 then return 'Nik može imati najviše 20 znakova.'; end if;
-  if btrim(n) !~ '^[A-Za-z0-9čćšžđČĆŠŽĐ._-]+$' then
-    return 'Koristi slova, brojeve, tačku, crticu ili donju crtu.';
-  end if;
-  flat := regexp_replace(translate(private.normalize_nick(n), '013457@', 'oieasta'), '[._-]', '', 'g');
-  foreach w in array blocked loop
-    if position(w in flat) > 0 then return 'Taj nik nije dozvoljen. Probaj drugi.'; end if;
-  end loop;
-  return null;
-end $$;
-
-
--- >>> migrations/0002_rls.sql
--- ═════════════════════════════════════════════════════════════
---  ConnectEd · 0002 · Row Level Security
---
---  Načela:
---   • RLS je uključen na SVIM tabelama (i u šemi private).
---   • Klijent ne piše direktno ni u jednu tabelu; sve izmjene idu
---     kroz RPC funkcije (0004_rpc.sql) koje same provjeravaju prava.
---   • Niko (ni mentor) ne može dobiti spisak svih učenika, pa ni
---     izvesti listu učenika bez grupe.
--- ═════════════════════════════════════════════════════════════
-
--- ─── Pomoćne funkcije (security definer, samo čitaju) ────────
-create or replace function private.my_profile_id()
-returns uuid language sql stable security definer set search_path = '' as $$
-  select id from public.profiles where user_id = auth.uid()
-$$;
-
-create or replace function private.is_staff()
-returns boolean language sql stable security definer set search_path = '' as $$
-  select coalesce((select role in ('mentor', 'pedagog') from public.profiles where user_id = auth.uid()), false)
-$$;
-
-create or replace function private.is_member(p_project uuid)
-returns boolean language sql stable security definer set search_path = '' as $$
-  select exists (
-    select 1 from public.group_members m
-    where m.project_id = p_project and m.left_at is null
-      and m.profile_id = (select id from public.profiles where user_id = auth.uid())
-  )
-$$;
-
-create or replace function private.shares_group(p_other uuid)
-returns boolean language sql stable security definer set search_path = '' as $$
-  select exists (
-    select 1
-    from public.group_members a
-    join public.group_members b on b.project_id = a.project_id
-    where a.profile_id = (select id from public.profiles where user_id = auth.uid())
-      and b.profile_id = p_other and a.left_at is null and b.left_at is null
-  )
-$$;
-
-create or replace function private.has_group(p_other uuid)
-returns boolean language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.group_members m where m.profile_id = p_other and m.left_at is null)
-$$;
-
-revoke all on all functions in schema private from public, anon, authenticated;
-grant usage on schema private to authenticated;
-grant execute on function
-  private.my_profile_id(), private.is_staff(), private.is_member(uuid),
-  private.shares_group(uuid), private.has_group(uuid)
-to authenticated;
-
--- ─── Uključi RLS svuda ───────────────────────────────────────
-alter table public.classes            enable row level security;
-alter table public.tags               enable row level security;
-alter table public.access_codes       enable row level security;
-alter table public.profiles           enable row level security;
-alter table public.profile_tags       enable row level security;
-alter table public.projects           enable row level security;
-alter table public.project_tags       enable row level security;
-alter table public.group_members      enable row level security;
-alter table public.invites            enable row level security;
-alter table public.wall_posts         enable row level security;
-alter table public.notifications      enable row level security;
-alter table public.help_signals       enable row level security;
-alter table public.demo_meta          enable row level security;
-alter table private.first_group_events enable row level security;
-
--- Klijent nikad ne piše direktno.
-revoke insert, update, delete, truncate on all tables in schema public from anon, authenticated;
-revoke all on all tables in schema private from anon, authenticated;
-revoke select on public.access_codes, public.profiles, public.profile_tags, public.projects,
-  public.project_tags, public.group_members, public.invites, public.wall_posts,
-  public.notifications, public.help_signals from anon;
-
--- ─── Politike čitanja ────────────────────────────────────────
-create policy classes_read on public.classes for select to anon, authenticated using (true);
-create policy tags_read    on public.tags    for select to anon, authenticated using (true);
-create policy demo_read    on public.demo_meta for select to anon, authenticated using (true);
-
--- Mentor/pedagog vidi SAMO neiskorišćene kodove.
-create policy codes_staff on public.access_codes for select to authenticated
-  using (private.is_staff() and used_at is null);
-
--- Profil: svoj; članovi mojih grupa; mentor vidi samo one koji JESU u grupi.
--- Spisak svih učenika nije dostupan nikome.
-create policy profiles_read on public.profiles for select to authenticated
-  using (
-    user_id = auth.uid()
-    or private.shares_group(id)
-    or (private.is_staff() and private.has_group(id))
-  );
-
-create policy profile_tags_own on public.profile_tags for select to authenticated
-  using (profile_id = private.my_profile_id());
-
-create policy projects_read on public.projects for select to authenticated
-  using (status in ('open', 'done') or leader_id = private.my_profile_id() or private.is_staff());
-
-create policy project_tags_read on public.project_tags for select to authenticated
-  using (exists (select 1 from public.projects p where p.id = project_id));
-
-create policy members_read on public.group_members for select to authenticated
-  using (private.is_member(project_id) or private.is_staff());
-
--- Poziv vidi samo onaj ko je pozvan. Vođa ne vidi ko je rekao „Ne sada“.
-create policy invites_own on public.invites for select to authenticated
-  using (profile_id = private.my_profile_id());
-
-create policy wall_read on public.wall_posts for select to authenticated
-  using (private.is_member(project_id) or private.is_staff());
-
-create policy notifications_own on public.notifications for select to authenticated
-  using (profile_id = private.my_profile_id());
-
--- „Treba mi pomoć“: čita samo mentor/pedagog.
-create policy help_staff on public.help_signals for select to authenticated
-  using (private.is_staff());
-
--- private.first_group_events: bez politika → nedostupno.
-
-
--- >>> migrations/0003_matching.sql
--- ═════════════════════════════════════════════════════════════
---  ConnectEd · 0003 · Spajanje
---
---  Ista logika kao src/lib/matching.ts (provjerava test pariteta).
---  Sve funkcije su u šemi private: nisu dostupne preko API-ja,
---  a skor se nigdje ne upisuje u javne tabele.
---
---  Skor = Σ težina poklopljenih oznaka (znam 30, volim 20, učim 10)
---       + 8 ako učenik grupi donosi novo odjeljenje/razred
---       + 6 ako učenik trenutno nije ni u jednoj aktivnoj grupi
---  Bez poklopljene oznake nema poziva. Najviše 2 poziva u 7 dana.
--- ═════════════════════════════════════════════════════════════
-
-create or replace function private.kind_weight(k public.tag_kind)
-returns int language sql immutable set search_path = '' as $$
-  select case k when 'znam' then 30 when 'volim' then 20 else 10 end
-$$;
-
-create or replace function private.free_spots(p_project uuid)
-returns int language sql stable set search_path = '' as $$
-  select p.spots - (
-    select count(*)::int from public.group_members m
-    where m.project_id = p.id and m.left_at is null and m.profile_id <> p.leader_id
-  )
-  from public.projects p where p.id = p_project
-$$;
-
-create or replace function private.in_active_group(p_profile uuid)
-returns boolean language sql stable set search_path = '' as $$
-  select exists (
-    select 1 from public.group_members m
-    join public.projects p on p.id = m.project_id
-    where m.profile_id = p_profile and m.left_at is null and p.status = 'open'
-  )
-$$;
-
-create or replace function private.recent_invites(p_profile uuid, p_now timestamptz)
-returns int language sql stable set search_path = '' as $$
-  select count(*)::int from public.invites i
-  where i.profile_id = p_profile and i.created_at > p_now - interval '7 days'
-$$;
-
-create or replace function private.score_candidate(p_project uuid, p_profile uuid)
-returns table (s_score int, s_tag text, s_kind public.tag_kind)
-language plpgsql stable set search_path = '' as $$
-declare
-  v_class text;
-  v_tag_score int;
-  v_tag text;
-  v_kind public.tag_kind;
-  v_score int;
-begin
-  select u.class_id into v_class from public.profiles u
-  where u.id = p_profile and u.role = 'student' and u.onboarded;
-  if not found then return; end if;
-  if not exists (select 1 from public.projects p where p.id = p_project and p.leader_id <> p_profile) then return; end if;
-  if exists (select 1 from public.group_members m where m.project_id = p_project and m.profile_id = p_profile) then return; end if;
-  if exists (select 1 from public.invites i where i.project_id = p_project and i.profile_id = p_profile) then return; end if;
-
-  select coalesce(sum(private.kind_weight(pt.kind)), 0)::int into v_tag_score
-  from public.project_tags x
-  join public.profile_tags pt on pt.tag = x.tag and pt.profile_id = p_profile
-  where x.project_id = p_project;
-  if v_tag_score <= 0 then return; end if;
-
-  select pt.tag, pt.kind into v_tag, v_kind
-  from public.project_tags x
-  join public.profile_tags pt on pt.tag = x.tag and pt.profile_id = p_profile
-  join public.tags t on t.slug = x.tag
-  where x.project_id = p_project
-  order by private.kind_weight(pt.kind) desc, t.sort asc
-  limit 1;
-
-  v_score := v_tag_score;
-  if v_class is not null and not exists (
-    select 1 from public.group_members m
-    join public.profiles q on q.id = m.profile_id
-    where m.project_id = p_project and m.left_at is null and q.class_id = v_class
-  ) then
-    v_score := v_score + 8;
-  end if;
-  if not private.in_active_group(p_profile) then
-    v_score := v_score + 6;
-  end if;
-
-  return query select v_score, v_tag, v_kind;
-end $$;
-
--- Koga pozvati na projekat (odobren projekat / neko napustio grupu).
-create or replace function private.compute_project_matches(p_project uuid, p_now timestamptz)
-returns table (m_project uuid, m_profile uuid, m_tag text, m_kind public.tag_kind)
-language plpgsql stable set search_path = '' as $$
-declare
-  v_free int;
-  v_pending int;
-  v_k int;
-begin
-  if not exists (select 1 from public.projects p where p.id = p_project and p.status = 'open') then return; end if;
-  v_free := private.free_spots(p_project);
-  if v_free <= 0 then return; end if;
-  select count(*)::int into v_pending from public.invites i
-  where i.project_id = p_project and i.status = 'pending';
-  v_k := v_free * 2 - v_pending;
-  if v_k <= 0 then return; end if;
-
-  return query
-    select p_project, u.id, s.s_tag, s.s_kind
-    from public.profiles u
-    cross join lateral private.score_candidate(p_project, u.id) s
-    where private.recent_invites(u.id, p_now) < 2
-    order by s.s_score desc, u.id asc
-    limit v_k;
-end $$;
-
--- Na koje projekte pozvati učenika (sačuvao oznake / napustio grupu).
-create or replace function private.compute_profile_matches(p_profile uuid, p_now timestamptz)
-returns table (m_project uuid, m_profile uuid, m_tag text, m_kind public.tag_kind)
-language plpgsql stable set search_path = '' as $$
-declare
-  v_rem int := 2 - private.recent_invites(p_profile, p_now);
-begin
-  if v_rem <= 0 then return; end if;
-  return query
-    select p.id, p_profile, s.s_tag, s.s_kind
-    from public.projects p
-    cross join lateral private.score_candidate(p.id, p_profile) s
-    where p.status = 'open' and private.free_spots(p.id) > 0
-    order by s.s_score desc, p.id asc
-    limit v_rem;
-end $$;
-
-create or replace function private.run_project_matching(p_project uuid)
-returns void language plpgsql security definer set search_path = '' as $$
-begin
-  insert into public.invites (project_id, profile_id, reason_tag, reason_kind)
-  select m_project, m_profile, m_tag, m_kind from private.compute_project_matches(p_project, now())
-  on conflict do nothing;
-end $$;
-
-create or replace function private.run_profile_matching(p_profile uuid)
-returns void language plpgsql security definer set search_path = '' as $$
-begin
-  insert into public.invites (project_id, profile_id, reason_tag, reason_kind)
-  select m_project, m_profile, m_tag, m_kind from private.compute_profile_matches(p_profile, now())
-  on conflict do nothing;
-end $$;
-
--- ─── Triggeri ────────────────────────────────────────────────
--- 1) Novi nalog: učenik je sačuvao oznake (tags_version se povećao).
-create or replace function private.trg_profile_tags_changed()
-returns trigger language plpgsql security definer set search_path = '' as $$
-begin
-  if new.onboarded and new.role = 'student' then
-    perform private.run_profile_matching(new.id);
-  end if;
-  return null;
-end $$;
-create trigger profile_tags_changed
-  after update of tags_version on public.profiles
-  for each row when (new.tags_version is distinct from old.tags_version)
-  execute function private.trg_profile_tags_changed();
-
--- 2) Projekat odobren.
-create or replace function private.trg_project_opened()
-returns trigger language plpgsql security definer set search_path = '' as $$
-begin
-  perform private.run_project_matching(new.id);
-  return null;
-end $$;
-create trigger project_opened
-  after update of status on public.projects
-  for each row when (new.status = 'open' and old.status is distinct from 'open')
-  execute function private.trg_project_opened();
-
--- 3) Neko napustio grupu.
-create or replace function private.trg_member_left()
-returns trigger language plpgsql security definer set search_path = '' as $$
-begin
-  perform private.run_project_matching(new.project_id);
-  perform private.run_profile_matching(new.profile_id);
-  return null;
-end $$;
-create trigger member_left
-  after update of left_at on public.group_members
-  for each row when (new.left_at is not null and old.left_at is null)
-  execute function private.trg_member_left();
-
-revoke all on all functions in schema private from public, anon, authenticated;
-grant execute on function
-  private.my_profile_id(), private.is_staff(), private.is_member(uuid),
-  private.shares_group(uuid), private.has_group(uuid)
-to authenticated;
-
-
--- >>> migrations/0004_rpc.sql
--- ═════════════════════════════════════════════════════════════
---  ConnectEd · 0004 · RPC funkcije (jedini način pisanja)
---  Sve su security definer i same provjeravaju ko poziva.
---  Oblik JSON odgovora prati src/data/types.ts.
--- ═════════════════════════════════════════════════════════════
-
--- ─── Interne pomoćne ─────────────────────────────────────────
-create or replace function private.me()
-returns public.profiles language plpgsql stable security definer set search_path = '' as $$
-declare v public.profiles;
-begin
-  select * into v from public.profiles where user_id = auth.uid();
-  if not found then raise exception 'Nalog nije pronađen. Prijavi se ponovo.'; end if;
-  return v;
-end $$;
-
-create or replace function private.require_staff()
-returns public.profiles language plpgsql stable security definer set search_path = '' as $$
-declare v public.profiles := private.me();
-begin
-  if v.role not in ('mentor', 'pedagog') then raise exception 'Samo za mentore.'; end if;
-  return v;
-end $$;
-
-create or replace function private.me_json(p_id uuid)
-returns jsonb language sql stable security definer set search_path = '' as $$
-  select jsonb_build_object(
-    'id', u.id, 'nick', u.nick, 'role', u.role, 'class_id', u.class_id,
-    'class_label', c.label, 'onboarded', u.onboarded)
-  from public.profiles u left join public.classes c on c.id = u.class_id
-  where u.id = p_id
-$$;
-
--- Projekat kao JSON (bez ikakvog skora).
-create or replace function private.project_json(p_id uuid, p_me uuid)
-returns jsonb language sql stable security definer set search_path = '' as $$
-  select jsonb_build_object(
-    'id', p.id, 'title', p.title, 'goal', p.goal, 'deadline', p.deadline,
-    'spots', p.spots, 'free', private.free_spots(p.id), 'icon', p.icon, 'status', p.status,
-    'created_at', p.created_at, 'approved_at', p.approved_at, 'completed_at', p.completed_at,
-    'result_text', p.result_text,
-    'tags', coalesce((select jsonb_agg(x.tag order by t.sort) from public.project_tags x
-                      join public.tags t on t.slug = x.tag where x.project_id = p.id), '[]'::jsonb),
-    'leader_nick', (select nick from public.profiles where id = p.leader_id),
-    'members', coalesce((
-      select jsonb_agg(jsonb_build_object('nick', u.nick, 'class_label', c.label,
-                                          'is_leader', u.id = p.leader_id) order by m.joined_at)
-      from public.group_members m
-      join public.profiles u on u.id = m.profile_id
-      left join public.classes c on c.id = u.class_id
-      where m.project_id = p.id and m.left_at is null), '[]'::jsonb),
-    'class_count', (select count(distinct u.class_id) from public.group_members m
-                    join public.profiles u on u.id = m.profile_id
-                    where m.project_id = p.id and m.left_at is null),
-    'is_member', exists (select 1 from public.group_members m
-                         where m.project_id = p.id and m.profile_id = p_me and m.left_at is null),
-    'is_leader', p.leader_id = p_me,
-    'invite', (select jsonb_build_object('id', i.id, 'reason_tag', i.reason_tag, 'reason_kind', i.reason_kind)
-               from public.invites i
-               where i.project_id = p.id and i.profile_id = p_me and i.status = 'pending')
-  )
-  from public.projects p where p.id = p_id
-$$;
-
-create or replace function private.notify(p_profile uuid, p_kind text, p_project uuid, p_body text)
-returns void language sql security definer set search_path = '' as $$
-  insert into public.notifications (profile_id, kind, project_id, body) values (p_profile, p_kind, p_project, p_body)
-$$;
-
--- Ulazak u grupu (poziv ili „Pridruži se“ iz feeda). Atomski.
-create or replace function private.join_internal(p_project uuid, p_me public.profiles)
-returns text language plpgsql security definer set search_path = '' as $$
-declare
-  v_p public.projects;
-  v_was_without boolean;
-begin
-  select * into v_p from public.projects where id = p_project for update;
-  if not found or v_p.status <> 'open' then raise exception 'Ovaj projekat trenutno ne prima nove članove.'; end if;
-  if exists (select 1 from public.group_members where project_id = p_project and profile_id = p_me.id and left_at is null) then
-    return 'already';
-  end if;
-  if private.free_spots(p_project) <= 0 then return 'full'; end if;
-
-  v_was_without := not exists (select 1 from public.group_members where profile_id = p_me.id and left_at is null);
-
-  insert into public.group_members (project_id, profile_id) values (p_project, p_me.id)
-  on conflict (project_id, profile_id) do update set left_at = null, joined_at = now();
-
-  update public.invites set status = 'accepted', responded_at = now()
-  where project_id = p_project and profile_id = p_me.id and status = 'pending';
-
-  insert into public.wall_posts (project_id, author_id, kind, body)
-  values (p_project, p_me.id, 'system', p_me.nick || ' se pridružio/la timu 🎉');
-
-  if v_p.leader_id <> p_me.id then
-    perform private.notify(v_p.leader_id, 'new_member', p_project,
-      p_me.nick || ' se pridružio/la timu „' || v_p.title || '“ 🎉');
-  end if;
-
-  if v_was_without then
-    insert into private.first_group_events (profile_id) values (p_me.id);
-  end if;
-
-  if private.free_spots(p_project) <= 0 then
-    update public.invites set status = 'expired' where project_id = p_project and status = 'pending';
-  end if;
-  return 'ok';
-end $$;
-
--- ─── Registracija ────────────────────────────────────────────
-create or replace function public.check_code(p_code text)
-returns jsonb language sql stable security definer set search_path = '' as $$
-  select coalesce(
-    (select jsonb_build_object('ok', true, 'role', a.role, 'class_label', c.label)
-     from public.access_codes a left join public.classes c on c.id = a.class_id
-     where a.code = upper(btrim(p_code)) and a.used_at is null),
-    jsonb_build_object('ok', false))
-$$;
-
-create or replace function public.nick_status(p_nick text)
-returns jsonb language plpgsql stable security definer set search_path = '' as $$
-declare v_problem text := private.nick_problem(p_nick);
-begin
-  if v_problem is null and exists (select 1 from public.profiles where nick_norm = private.normalize_nick(p_nick)) then
-    v_problem := 'Taj nik je zauzet. Probaj drugi.';
-  end if;
-  return jsonb_build_object('ok', v_problem is null, 'problem', v_problem);
-end $$;
-
--- Provjera i trošenje koda u JEDNOJ transakciji (zaključavanje reda).
-create or replace function public.redeem_code(p_code text, p_nick text)
-returns jsonb language plpgsql security definer set search_path = '' as $$
-declare
-  v_uid uuid := auth.uid();
-  v_code public.access_codes;
-  v_problem text;
-  v_id uuid;
-begin
-  if v_uid is null then raise exception 'Prijavi se ponovo.'; end if;
-  if exists (select 1 from public.profiles where user_id = v_uid) then
-    raise exception 'Ovaj nalog već ima profil.';
-  end if;
-  v_problem := private.nick_problem(p_nick);
-  if v_problem is not null then raise exception '%', v_problem; end if;
-
-  select * into v_code from public.access_codes where code = upper(btrim(p_code)) for update;
-  if not found or v_code.used_at is not null then
-    raise exception 'Kod nije važeći ili je već iskorišćen.';
-  end if;
-
-  begin
-    insert into public.profiles (user_id, nick, nick_norm, role, class_id, onboarded)
-    values (v_uid, btrim(p_nick), private.normalize_nick(p_nick), v_code.role, v_code.class_id,
-            v_code.role <> 'student')
-    returning id into v_id;
-  exception when unique_violation then
-    raise exception 'Taj nik je zauzet. Probaj drugi.';
-  end;
-
-  update public.access_codes set used_at = now() where code = v_code.code;
-  return private.me_json(v_id);
-end $$;
-
-create or replace function public.get_me()
-returns jsonb language sql stable security definer set search_path = '' as $$
-  select private.me_json(id) from public.profiles where user_id = auth.uid()
-$$;
-
-create or replace function public.get_my_tags()
-returns jsonb language sql stable security definer set search_path = '' as $$
-  select coalesce(jsonb_agg(jsonb_build_object('tag', tag, 'kind', kind)), '[]'::jsonb)
-  from public.profile_tags where profile_id = private.my_profile_id()
-$$;
-
--- p_tags: [{"tag":"video","kind":"znam"}, …]. Pokreće spajanje (trigger).
-create or replace function public.save_tags(p_tags jsonb)
-returns void language plpgsql security definer set search_path = '' as $$
-declare v_me public.profiles := private.me();
-begin
-  if jsonb_typeof(p_tags) <> 'array' or jsonb_array_length(p_tags) = 0 then
-    raise exception 'Izaberi bar jednu oznaku.';
-  end if;
-  if jsonb_array_length(p_tags) > 17 then raise exception 'Previše oznaka.'; end if;
-  delete from public.profile_tags where profile_id = v_me.id;
-  insert into public.profile_tags (profile_id, tag, kind)
-  select distinct on (e->>'tag') v_me.id, e->>'tag', (e->>'kind')::public.tag_kind
-  from jsonb_array_elements(p_tags) e
-  where exists (select 1 from public.tags t where t.slug = e->>'tag');
-  update public.profiles set onboarded = true, tags_version = tags_version + 1 where id = v_me.id;
-end $$;
-
--- ─── Feed i projekti ─────────────────────────────────────────
-create or replace function public.get_feed()
-returns jsonb language plpgsql stable security definer set search_path = '' as $$
-declare v_me public.profiles := private.me();
-begin
-  return coalesce((
-    select jsonb_agg(private.project_json(p.id, v_me.id)
-                     order by (p.status = 'done'), coalesce(p.completed_at, p.approved_at, p.created_at) desc)
-    from public.projects p
-    where p.status in ('open', 'done') or (p.status = 'pending' and p.leader_id = v_me.id)
-  ), '[]'::jsonb);
-end $$;
-
-create or replace function public.get_my_groups()
-returns jsonb language plpgsql stable security definer set search_path = '' as $$
-declare v_me public.profiles := private.me();
-begin
-  return coalesce((
-    select jsonb_agg(private.project_json(p.id, v_me.id)
-                     order by (p.status = 'done'), coalesce(p.completed_at, p.approved_at, p.created_at) desc)
-    from public.projects p
-    where (p.status in ('open', 'done') and exists (
-             select 1 from public.group_members m
-             where m.project_id = p.id and m.profile_id = v_me.id and m.left_at is null))
-       or (p.status in ('pending', 'rejected') and p.leader_id = v_me.id)
-  ), '[]'::jsonb);
-end $$;
-
-create or replace function public.get_my_invites()
-returns jsonb language plpgsql stable security definer set search_path = '' as $$
-declare v_me public.profiles := private.me();
-begin
-  return coalesce((
-    select jsonb_agg(private.project_json(i.project_id, v_me.id) order by i.created_at desc)
-    from public.invites i join public.projects p on p.id = i.project_id
-    where i.profile_id = v_me.id and i.status = 'pending' and p.status = 'open'
-  ), '[]'::jsonb);
-end $$;
-
-create or replace function public.get_project(p_id uuid)
-returns jsonb language plpgsql stable security definer set search_path = '' as $$
-declare
-  v_me public.profiles := private.me();
-  v_p public.projects;
-  v_wall boolean;
-begin
-  select * into v_p from public.projects where id = p_id;
-  if not found then return null; end if;
-  if not (v_p.status in ('open', 'done') or v_p.leader_id = v_me.id or v_me.role in ('mentor', 'pedagog')) then
-    return null;
-  end if;
-  v_wall := v_me.role in ('mentor', 'pedagog') or exists (
-    select 1 from public.group_members where project_id = p_id and profile_id = v_me.id and left_at is null);
-  return private.project_json(p_id, v_me.id) || jsonb_build_object(
-    'can_see_wall', v_wall,
-    'can_post', v_wall and v_me.role = 'student' and v_p.status = 'open',
-    'wall', case when v_wall then coalesce((
-      select jsonb_agg(jsonb_build_object('id', w.id, 'kind', w.kind, 'body', w.body,
-                                          'author_nick', u.nick, 'created_at', w.created_at)
-                       order by w.created_at)
-      from public.wall_posts w left join public.profiles u on u.id = w.author_id
-      where w.project_id = p_id), '[]'::jsonb) else '[]'::jsonb end);
-end $$;
-
-create or replace function public.create_project(
-  p_title text, p_goal text, p_deadline date, p_spots int, p_tags text[], p_icon text default '✨')
-returns uuid language plpgsql security definer set search_path = '' as $$
-declare
-  v_me public.profiles := private.me();
-  v_id uuid;
-begin
-  if v_me.role <> 'student' then raise exception 'Projekte pokreću učenici.'; end if;
-  if (select count(*) from public.projects where leader_id = v_me.id and status = 'pending') >= 3 then
-    raise exception 'Već imaš 3 projekta koja čekaju odobrenje.';
-  end if;
-  if coalesce(array_length(p_tags, 1), 0) = 0 then raise exception 'Izaberi bar jednu oznaku.'; end if;
-  insert into public.projects (title, goal, deadline, spots, icon, leader_id)
-  values (btrim(p_title), btrim(p_goal), p_deadline, coalesce(p_spots, 2), coalesce(nullif(p_icon, ''), '✨'), v_me.id)
-  returning id into v_id;
-  insert into public.project_tags (project_id, tag)
-  select distinct v_id, t from unnest(p_tags) t where exists (select 1 from public.tags where slug = t);
-  return v_id;
-end $$;
-
-create or replace function public.respond_invite(p_invite uuid, p_accept boolean)
-returns text language plpgsql security definer set search_path = '' as $$
-declare
-  v_me public.profiles := private.me();
-  v_i public.invites;
-begin
-  select * into v_i from public.invites where id = p_invite and profile_id = v_me.id for update;
-  if not found or v_i.status <> 'pending' then return 'gone'; end if;
-  if not p_accept then
-    -- „Ne sada“: bez posljedica, bez pitanja, niko ne dobija obavještenje.
-    update public.invites set status = 'declined', responded_at = now() where id = p_invite;
-    return 'ok';
-  end if;
-  return private.join_internal(v_i.project_id, v_me);
-end $$;
-
-create or replace function public.join_project(p_project uuid)
-returns text language plpgsql security definer set search_path = '' as $$
-declare v_me public.profiles := private.me();
-begin
-  if v_me.role <> 'student' then raise exception 'Samo učenici ulaze u timove.'; end if;
-  return private.join_internal(p_project, v_me);
-end $$;
-
-create or replace function public.leave_project(p_project uuid)
-returns void language plpgsql security definer set search_path = '' as $$
-declare v_me public.profiles := private.me();
-begin
-  if exists (select 1 from public.projects where id = p_project and leader_id = v_me.id) then
-    raise exception 'Vođa projekta ne može napustiti tim.';
-  end if;
-  update public.group_members set left_at = now()
-  where project_id = p_project and profile_id = v_me.id and left_at is null;
-  if found then
-    insert into public.wall_posts (project_id, author_id, kind, body)
-    values (p_project, v_me.id, 'system', v_me.nick || ' više nije u timu. Hvala na pomoći! 💜');
-  end if;
-end $$;
-
-create or replace function public.post_wall(p_project uuid, p_body text)
-returns void language plpgsql security definer set search_path = '' as $$
-declare v_me public.profiles := private.me();
-begin
-  if not exists (select 1 from public.group_members m join public.projects p on p.id = m.project_id
-                 where m.project_id = p_project and m.profile_id = v_me.id and m.left_at is null
-                   and p.status = 'open') then
-    raise exception 'Na zid pišu članovi tima.';
-  end if;
-  if char_length(btrim(coalesce(p_body, ''))) = 0 then return; end if;
-  insert into public.wall_posts (project_id, author_id, body) values (p_project, v_me.id, left(btrim(p_body), 500));
-end $$;
-
-create or replace function public.complete_project(p_project uuid, p_result text)
-returns void language plpgsql security definer set search_path = '' as $$
-declare
-  v_me public.profiles := private.me();
-  v_p public.projects;
-begin
-  select * into v_p from public.projects where id = p_project for update;
-  if not found or v_p.status <> 'open' then raise exception 'Projekat nije u toku.'; end if;
-  if not exists (select 1 from public.group_members where project_id = p_project and profile_id = v_me.id and left_at is null) then
-    raise exception 'Projekat završavaju članovi tima.';
-  end if;
-  if char_length(btrim(coalesce(p_result, ''))) < 3 then raise exception 'Napiši kratko šta ste uradili.'; end if;
-  update public.projects set status = 'done', result_text = left(btrim(p_result), 400), completed_at = now()
-  where id = p_project;
-  update public.invites set status = 'expired' where project_id = p_project and status = 'pending';
-  insert into public.wall_posts (project_id, author_id, kind, body)
-  values (p_project, v_me.id, 'system', 'Projekat je završen! Rezultat je sada u feedu škole. 🎉');
-  insert into public.notifications (profile_id, kind, project_id, body)
-  select m.profile_id, 'done', p_project, 'Projekat „' || v_p.title || '“ je završen. Bravo, tim! 🎉'
-  from public.group_members m where m.project_id = p_project and m.left_at is null and m.profile_id <> v_me.id;
-end $$;
-
--- ─── Obavještenja i pomoć ────────────────────────────────────
-create or replace function public.get_notifications()
-returns jsonb language sql stable security definer set search_path = '' as $$
-  select coalesce(jsonb_agg(jsonb_build_object('id', id, 'kind', kind, 'project_id', project_id,
-           'body', body, 'read', read_at is not null, 'created_at', created_at) order by created_at desc), '[]'::jsonb)
-  from (select * from public.notifications where profile_id = private.my_profile_id()
-        order by created_at desc limit 30) n
-$$;
-
-create or replace function public.mark_notifications_read()
-returns void language sql security definer set search_path = '' as $$
-  update public.notifications set read_at = now() where profile_id = private.my_profile_id() and read_at is null
-$$;
-
-create or replace function public.request_help(p_note text default null)
-returns void language plpgsql security definer set search_path = '' as $$
-declare v_me public.profiles := private.me();
-begin
-  insert into public.help_signals (profile_id, note) values (v_me.id, nullif(left(btrim(coalesce(p_note, '')), 300), ''));
-end $$;
-
--- ─── Mentor ──────────────────────────────────────────────────
-create or replace function public.approve_project(p_project uuid, p_approve boolean)
-returns void language plpgsql security definer set search_path = '' as $$
-declare
-  v_me public.profiles := private.require_staff();
-  v_p public.projects;
-begin
-  select * into v_p from public.projects where id = p_project for update;
-  if not found or v_p.status <> 'pending' then return; end if;
-  if p_approve then
-    -- Vođa ulazi u grupu prije otvaranja, da spajanje zna odjeljenje tima.
-    insert into public.group_members (project_id, profile_id) values (p_project, v_p.leader_id)
-    on conflict (project_id, profile_id) do update set left_at = null;
-    if not exists (select 1 from public.group_members where profile_id = v_p.leader_id and left_at is null and project_id <> p_project) then
-      insert into private.first_group_events (profile_id) values (v_p.leader_id);
-    end if;
-    insert into public.wall_posts (project_id, kind, body)
-    values (p_project, 'system', 'Projekat je odobren. Srećno, tim! 🚀');
-    update public.projects set status = 'open', approved_at = now() where id = p_project; -- → trigger spajanja
-    perform private.notify(v_p.leader_id, 'approved', p_project,
-      'Tvoj projekat „' || v_p.title || '“ je odobren. Pozivi su poslati! 🚀');
-  else
-    update public.projects set status = 'rejected' where id = p_project;
-    perform private.notify(v_p.leader_id, 'rejected', p_project,
-      'Projekat „' || v_p.title || '“ ovaj put nije odobren. Mentor će ti se javiti.');
-  end if;
-end $$;
-
-create or replace function public.resolve_help(p_id uuid)
-returns void language plpgsql security definer set search_path = '' as $$
-begin
-  perform private.require_staff();
-  update public.help_signals set handled_at = now() where id = p_id;
-end $$;
-
--- Samo zbirni brojevi. Bez imena, bez spiskova.
-create or replace function public.get_metrics()
-returns jsonb language plpgsql stable security definer set search_path = '' as $$
-declare
-  v_total int;
-  v_in int;
-begin
-  perform private.require_staff();
-  select count(*) into v_total from public.profiles where role = 'student';
-  select count(distinct m.profile_id) into v_in
-  from public.group_members m
-  join public.profiles u on u.id = m.profile_id and u.role = 'student'
-  join public.projects p on p.id = m.project_id and p.status in ('open', 'done')
-  where m.left_at is null;
-  return jsonb_build_object(
-    'students', v_total,
-    'in_group_pct', case when v_total = 0 then 0 else round(100.0 * v_in / v_total) end,
-    'zero_to_one', (select count(*) from private.first_group_events),
-    'done', (select count(*) from public.projects where status = 'done'),
-    'mixed_groups', (select count(*) from public.projects p where p.status in ('open', 'done') and (
-       select count(distinct u.class_id) from public.group_members m
-       join public.profiles u on u.id = m.profile_id
-       where m.project_id = p.id and m.left_at is null) >= 2));
-end $$;
-
-create or replace function public.get_mentor_dashboard()
-returns jsonb language plpgsql stable security definer set search_path = '' as $$
-declare v_me public.profiles := private.require_staff();
-begin
-  return jsonb_build_object(
-    'pending', coalesce((select jsonb_agg(private.project_json(p.id, v_me.id) order by p.created_at)
-                         from public.projects p where p.status = 'pending'), '[]'::jsonb),
-    'groups', coalesce((select jsonb_agg(private.project_json(p.id, v_me.id) order by p.approved_at desc)
-                        from public.projects p where p.status = 'open'), '[]'::jsonb),
-    'codes', coalesce((select jsonb_agg(jsonb_build_object('code', a.code, 'role', a.role, 'class_label', c.label)
-                                        order by a.role, c.razred, c.label, a.code)
-                       from public.access_codes a left join public.classes c on c.id = a.class_id
-                       where a.used_at is null), '[]'::jsonb),
-    'help', coalesce((select jsonb_agg(jsonb_build_object('id', h.id, 'nick', u.nick, 'class_label', c.label,
-                                                          'note', h.note, 'created_at', h.created_at)
-                                       order by h.created_at desc)
-                      from public.help_signals h join public.profiles u on u.id = h.profile_id
-                      left join public.classes c on c.id = u.class_id
-                      where h.handled_at is null), '[]'::jsonb),
-    'metrics', public.get_metrics());
-end $$;
-
--- Vraća bazu na seed. („where true“: Supabase odbija DELETE bez WHERE preko API-ja.) Briše naloge učenika napravljene tokom demonstracije;
--- mentorski/pedagoški nalozi ostaju.
-create or replace function public.reset_demo()
-returns void language plpgsql security definer set search_path = '' as $$
-begin
-  perform private.require_staff();
-  delete from auth.users u
-  where exists (select 1 from public.profiles p where p.user_id = u.id and p.role = 'student')
-     or not exists (select 1 from public.profiles p where p.user_id = u.id);
-  delete from public.notifications where true;
-  delete from public.help_signals where true;
-  delete from public.projects where true; -- kaskadno: oznake, članovi, pozivi, zid
-  delete from public.group_members where true;
-  delete from public.profiles where role = 'student';
-  delete from private.first_group_events where true;
-  update public.access_codes set used_at = null where role = 'student';
-  perform private.load_seed();
-  update public.demo_meta set reset_at = now() where id = 1;
-end $$;
-
--- Privremena prazna verzija; prava se definiše u supabase/seed.sql.
-create or replace function private.load_seed()
-returns void language plpgsql security definer set search_path = '' as $$ begin end $$;
-
--- ─── Prava ───────────────────────────────────────────────────
-revoke all on all functions in schema private from public, anon, authenticated;
-grant execute on function
-  private.my_profile_id(), private.is_staff(), private.is_member(uuid),
-  private.shares_group(uuid), private.has_group(uuid)
-to authenticated;
-
-revoke execute on all functions in schema public from public, anon, authenticated;
-grant execute on function public.check_code(text), public.nick_status(text) to anon, authenticated;
-grant execute on function
-  public.redeem_code(text, text), public.get_me(), public.get_my_tags(), public.save_tags(jsonb),
-  public.get_feed(), public.get_my_groups(), public.get_my_invites(), public.get_project(uuid),
-  public.create_project(text, text, date, int, text[], text), public.respond_invite(uuid, boolean),
-  public.join_project(uuid), public.leave_project(uuid), public.post_wall(uuid, text),
-  public.complete_project(uuid, text), public.get_notifications(), public.mark_notifications_read(),
-  public.request_help(text), public.approve_project(uuid, boolean), public.resolve_help(uuid),
-  public.get_metrics(), public.get_mentor_dashboard(), public.reset_demo()
-to authenticated;
-
-
--- >>> migrations/0005_realtime.sql
--- ═════════════════════════════════════════════════════════════
---  ConnectEd · 0005 · Realtime
---  Klijent dobija promjene bez pollinga. Realtime poštuje RLS:
---  svako dobija samo redove koje smije da vidi.
--- ═════════════════════════════════════════════════════════════
+create index on private.code_attempts (user_id, at);
+
+-- ── RLS: uključen svuda; čitanje dozvoljeno samo za zid platna ──
+
+alter table public.demo_settings enable row level security;
+alter table public.tags          enable row level security;
+alter table public.profiles      enable row level security;
+alter table public.demo_codes    enable row level security;
+alter table public.profile_tags  enable row level security;
+alter table public.projects      enable row level security;
+alter table public.memberships   enable row level security;
+alter table public.invites       enable row level security;
+alter table public.demo_events   enable row level security;
+
+revoke all on public.demo_settings, public.tags, public.profiles, public.demo_codes, public.profile_tags,
+  public.projects, public.memberships, public.invites, public.demo_events from anon, authenticated;
+grant select on public.demo_events to anon, authenticated;
+create policy "zid platna je javan" on public.demo_events for select to anon, authenticated using (true);
+
+-- Realtime: samo zid (platno i admin; telefoni ne otvaraju websocket).
 do $$
 begin
   if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
     create publication supabase_realtime;
   end if;
 end $$;
+alter publication supabase_realtime add table public.demo_events;
 
-alter publication supabase_realtime add table
-  public.invites,
-  public.notifications,
-  public.wall_posts,
-  public.projects,
-  public.group_members,
-  public.help_signals,
-  public.demo_meta;
+-- ── Pomoćne funkcije (šema private, nije izložena API-ju) ─────
 
-
--- >>> migrations/0006_fix_reset.sql
--- ═════════════════════════════════════════════════════════════
---  ConnectEd · 0006 · Ispravka „Resetuj demo“
---  Supabase (pg-safeupdate) odbija DELETE bez WHERE kad se poziva
---  preko API-ja. Za bazu postavljenu prije ove ispravke: pokrenite
---  ovaj fajl u SQL Editoru. Bezbjedno je pokrenuti ga više puta.
--- ═════════════════════════════════════════════════════════════
-
-create or replace function public.reset_demo()
-returns void language plpgsql security definer set search_path = '' as $$
-begin
-  perform private.require_staff();
-  delete from auth.users u
-  where exists (select 1 from public.profiles p where p.user_id = u.id and p.role = 'student')
-     or not exists (select 1 from public.profiles p where p.user_id = u.id);
-  delete from public.notifications where true;
-  delete from public.help_signals where true;
-  delete from public.projects where true; -- kaskadno: oznake, članovi, pozivi, zid
-  delete from public.group_members where true;
-  delete from public.profiles where role = 'student';
-  delete from private.first_group_events where true;
-  update public.access_codes set used_at = null where role = 'student';
-  perform private.load_seed();
-  update public.demo_meta set reset_at = now() where id = 1;
-end $$;
-
-revoke execute on function public.reset_demo() from public, anon;
-grant execute on function public.reset_demo() to authenticated;
-
-
--- >>> migrations/0007_simple_codes.sql
--- ═════════════════════════════════════════════════════════════
---  ConnectEd · 0007 · Jednostavni četvorocifreni pristupni kodovi
---  3201 = III-2, kod br. 1 (razred · smjer · redni broj 01–10).
---  Mentori 9001–9005, pedagog 8001–8002.
---  Za postojeću bazu: pokrenite u SQL Editoru. Bezbjedno više puta.
---  Iskorišćeni stari kodovi (npr. CE-MT-2026) i njihovi nalozi ostaju.
--- ═════════════════════════════════════════════════════════════
-
--- 1) Ukloni stare NEISKORIŠĆENE kodove oblika CE-…
-delete from public.access_codes where code like 'CE-%' and used_at is null;
-
--- 2) Dodaj nove kodove (odjeljenja moraju postojati; na praznoj bazi ih dodaje seed.sql)
-insert into public.access_codes (code, role, class_id)
-select v.code, v.role::public.user_role, v.class_id
-from (values
-    ('1101', 'student', '1-1'),
-    ('1102', 'student', '1-1'),
-    ('1103', 'student', '1-1'),
-    ('1104', 'student', '1-1'),
-    ('1105', 'student', '1-1'),
-    ('1106', 'student', '1-1'),
-    ('1107', 'student', '1-1'),
-    ('1108', 'student', '1-1'),
-    ('1109', 'student', '1-1'),
-    ('1110', 'student', '1-1'),
-    ('1201', 'student', '1-2'),
-    ('1202', 'student', '1-2'),
-    ('1203', 'student', '1-2'),
-    ('1204', 'student', '1-2'),
-    ('1205', 'student', '1-2'),
-    ('1206', 'student', '1-2'),
-    ('1207', 'student', '1-2'),
-    ('1208', 'student', '1-2'),
-    ('1209', 'student', '1-2'),
-    ('1210', 'student', '1-2'),
-    ('1301', 'student', '1-3'),
-    ('1302', 'student', '1-3'),
-    ('1303', 'student', '1-3'),
-    ('1304', 'student', '1-3'),
-    ('1305', 'student', '1-3'),
-    ('1306', 'student', '1-3'),
-    ('1307', 'student', '1-3'),
-    ('1308', 'student', '1-3'),
-    ('1309', 'student', '1-3'),
-    ('1310', 'student', '1-3'),
-    ('1401', 'student', '1-4'),
-    ('1402', 'student', '1-4'),
-    ('1403', 'student', '1-4'),
-    ('1404', 'student', '1-4'),
-    ('1405', 'student', '1-4'),
-    ('1406', 'student', '1-4'),
-    ('1407', 'student', '1-4'),
-    ('1408', 'student', '1-4'),
-    ('1409', 'student', '1-4'),
-    ('1410', 'student', '1-4'),
-    ('2101', 'student', '2-1'),
-    ('2102', 'student', '2-1'),
-    ('2103', 'student', '2-1'),
-    ('2104', 'student', '2-1'),
-    ('2105', 'student', '2-1'),
-    ('2106', 'student', '2-1'),
-    ('2107', 'student', '2-1'),
-    ('2108', 'student', '2-1'),
-    ('2109', 'student', '2-1'),
-    ('2110', 'student', '2-1'),
-    ('2201', 'student', '2-2'),
-    ('2202', 'student', '2-2'),
-    ('2203', 'student', '2-2'),
-    ('2204', 'student', '2-2'),
-    ('2205', 'student', '2-2'),
-    ('2206', 'student', '2-2'),
-    ('2207', 'student', '2-2'),
-    ('2208', 'student', '2-2'),
-    ('2209', 'student', '2-2'),
-    ('2210', 'student', '2-2'),
-    ('2301', 'student', '2-3'),
-    ('2302', 'student', '2-3'),
-    ('2303', 'student', '2-3'),
-    ('2304', 'student', '2-3'),
-    ('2305', 'student', '2-3'),
-    ('2306', 'student', '2-3'),
-    ('2307', 'student', '2-3'),
-    ('2308', 'student', '2-3'),
-    ('2309', 'student', '2-3'),
-    ('2310', 'student', '2-3'),
-    ('2401', 'student', '2-4'),
-    ('2402', 'student', '2-4'),
-    ('2403', 'student', '2-4'),
-    ('2404', 'student', '2-4'),
-    ('2405', 'student', '2-4'),
-    ('2406', 'student', '2-4'),
-    ('2407', 'student', '2-4'),
-    ('2408', 'student', '2-4'),
-    ('2409', 'student', '2-4'),
-    ('2410', 'student', '2-4'),
-    ('3101', 'student', '3-1'),
-    ('3102', 'student', '3-1'),
-    ('3103', 'student', '3-1'),
-    ('3104', 'student', '3-1'),
-    ('3105', 'student', '3-1'),
-    ('3106', 'student', '3-1'),
-    ('3107', 'student', '3-1'),
-    ('3108', 'student', '3-1'),
-    ('3109', 'student', '3-1'),
-    ('3110', 'student', '3-1'),
-    ('3201', 'student', '3-2'),
-    ('3202', 'student', '3-2'),
-    ('3203', 'student', '3-2'),
-    ('3204', 'student', '3-2'),
-    ('3205', 'student', '3-2'),
-    ('3206', 'student', '3-2'),
-    ('3207', 'student', '3-2'),
-    ('3208', 'student', '3-2'),
-    ('3209', 'student', '3-2'),
-    ('3210', 'student', '3-2'),
-    ('3301', 'student', '3-3'),
-    ('3302', 'student', '3-3'),
-    ('3303', 'student', '3-3'),
-    ('3304', 'student', '3-3'),
-    ('3305', 'student', '3-3'),
-    ('3306', 'student', '3-3'),
-    ('3307', 'student', '3-3'),
-    ('3308', 'student', '3-3'),
-    ('3309', 'student', '3-3'),
-    ('3310', 'student', '3-3'),
-    ('3401', 'student', '3-4'),
-    ('3402', 'student', '3-4'),
-    ('3403', 'student', '3-4'),
-    ('3404', 'student', '3-4'),
-    ('3405', 'student', '3-4'),
-    ('3406', 'student', '3-4'),
-    ('3407', 'student', '3-4'),
-    ('3408', 'student', '3-4'),
-    ('3409', 'student', '3-4'),
-    ('3410', 'student', '3-4'),
-    ('4101', 'student', '4-1'),
-    ('4102', 'student', '4-1'),
-    ('4103', 'student', '4-1'),
-    ('4104', 'student', '4-1'),
-    ('4105', 'student', '4-1'),
-    ('4106', 'student', '4-1'),
-    ('4107', 'student', '4-1'),
-    ('4108', 'student', '4-1'),
-    ('4109', 'student', '4-1'),
-    ('4110', 'student', '4-1'),
-    ('4201', 'student', '4-2'),
-    ('4202', 'student', '4-2'),
-    ('4203', 'student', '4-2'),
-    ('4204', 'student', '4-2'),
-    ('4205', 'student', '4-2'),
-    ('4206', 'student', '4-2'),
-    ('4207', 'student', '4-2'),
-    ('4208', 'student', '4-2'),
-    ('4209', 'student', '4-2'),
-    ('4210', 'student', '4-2'),
-    ('4301', 'student', '4-3'),
-    ('4302', 'student', '4-3'),
-    ('4303', 'student', '4-3'),
-    ('4304', 'student', '4-3'),
-    ('4305', 'student', '4-3'),
-    ('4306', 'student', '4-3'),
-    ('4307', 'student', '4-3'),
-    ('4308', 'student', '4-3'),
-    ('4309', 'student', '4-3'),
-    ('4310', 'student', '4-3'),
-    ('4401', 'student', '4-4'),
-    ('4402', 'student', '4-4'),
-    ('4403', 'student', '4-4'),
-    ('4404', 'student', '4-4'),
-    ('4405', 'student', '4-4'),
-    ('4406', 'student', '4-4'),
-    ('4407', 'student', '4-4'),
-    ('4408', 'student', '4-4'),
-    ('4409', 'student', '4-4'),
-    ('4410', 'student', '4-4'),
-    ('9001', 'mentor', null),
-    ('9002', 'mentor', null),
-    ('9003', 'mentor', null),
-    ('9004', 'mentor', null),
-    ('9005', 'mentor', null),
-    ('8001', 'pedagog', null),
-    ('8002', 'pedagog', null)
-) as v(code, role, class_id)
-where v.class_id is null or exists (select 1 from public.classes c where c.id = v.class_id)
-on conflict (code) do nothing;
-
--- 3) „Resetuj demo“ ubuduće vraća nove kodove
-create or replace function private.load_seed()
-returns void language plpgsql security definer set search_path = '' as $seed$
-begin
-  insert into public.classes (id, razred, smjer, label) values
-    ('1-1', 1, 'Ekonomski tehničar', 'I-1'),
-    ('1-2', 1, 'Turistički tehničar', 'I-2'),
-    ('1-3', 1, 'Kuvar', 'I-3'),
-    ('1-4', 1, 'Konobar', 'I-4'),
-    ('2-1', 2, 'Ekonomski tehničar', 'II-1'),
-    ('2-2', 2, 'Turistički tehničar', 'II-2'),
-    ('2-3', 2, 'Kuvar', 'II-3'),
-    ('2-4', 2, 'Konobar', 'II-4'),
-    ('3-1', 3, 'Ekonomski tehničar', 'III-1'),
-    ('3-2', 3, 'Turistički tehničar', 'III-2'),
-    ('3-3', 3, 'Kuvar', 'III-3'),
-    ('3-4', 3, 'Konobar', 'III-4'),
-    ('4-1', 4, 'Ekonomski tehničar', 'IV-1'),
-    ('4-2', 4, 'Turistički tehničar', 'IV-2'),
-    ('4-3', 4, 'Kuvar', 'IV-3'),
-    ('4-4', 4, 'Konobar', 'IV-4')
-  on conflict (id) do update set razred = excluded.razred, smjer = excluded.smjer, label = excluded.label;
-
-  insert into public.tags (slug, label, icon, sort) values
-    ('kuvanje', 'Kuvanje', '🍳', 0),
-    ('poslasticarstvo', 'Poslastičarstvo', '🧁', 1),
-    ('barmen', 'Barmen i posluženje', '🍹', 2),
-    ('turizam', 'Turizam i vođenje tura', '🧭', 3),
-    ('jezici', 'Strani jezici', '🗣️', 4),
-    ('preduzetnistvo', 'Preduzetništvo', '💼', 5),
-    ('crtanje', 'Crtanje i dizajn', '🎨', 6),
-    ('fotografija', 'Fotografija', '📷', 7),
-    ('video', 'Video montaža', '🎬', 8),
-    ('muzika', 'Muzika', '🎵', 9),
-    ('bubnjevi', 'Bubnjevi', '🥁', 10),
-    ('ples', 'Ples', '💃', 11),
-    ('sport', 'Sport', '⚽', 12),
-    ('pisanje', 'Pisanje', '✍️', 13),
-    ('podcast', 'Podcast', '🎙️', 14),
-    ('programiranje', 'Programiranje', '💻', 15),
-    ('gaming', 'Gaming', '🎮', 16)
-  on conflict (slug) do update set label = excluded.label, icon = excluded.icon, sort = excluded.sort;
-
-  insert into public.access_codes (code, role, class_id) values
-    ('1101', 'student', '1-1'),
-    ('1102', 'student', '1-1'),
-    ('1103', 'student', '1-1'),
-    ('1104', 'student', '1-1'),
-    ('1105', 'student', '1-1'),
-    ('1106', 'student', '1-1'),
-    ('1107', 'student', '1-1'),
-    ('1108', 'student', '1-1'),
-    ('1109', 'student', '1-1'),
-    ('1110', 'student', '1-1'),
-    ('1201', 'student', '1-2'),
-    ('1202', 'student', '1-2'),
-    ('1203', 'student', '1-2'),
-    ('1204', 'student', '1-2'),
-    ('1205', 'student', '1-2'),
-    ('1206', 'student', '1-2'),
-    ('1207', 'student', '1-2'),
-    ('1208', 'student', '1-2'),
-    ('1209', 'student', '1-2'),
-    ('1210', 'student', '1-2'),
-    ('1301', 'student', '1-3'),
-    ('1302', 'student', '1-3'),
-    ('1303', 'student', '1-3'),
-    ('1304', 'student', '1-3'),
-    ('1305', 'student', '1-3'),
-    ('1306', 'student', '1-3'),
-    ('1307', 'student', '1-3'),
-    ('1308', 'student', '1-3'),
-    ('1309', 'student', '1-3'),
-    ('1310', 'student', '1-3'),
-    ('1401', 'student', '1-4'),
-    ('1402', 'student', '1-4'),
-    ('1403', 'student', '1-4'),
-    ('1404', 'student', '1-4'),
-    ('1405', 'student', '1-4'),
-    ('1406', 'student', '1-4'),
-    ('1407', 'student', '1-4'),
-    ('1408', 'student', '1-4'),
-    ('1409', 'student', '1-4'),
-    ('1410', 'student', '1-4'),
-    ('2101', 'student', '2-1'),
-    ('2102', 'student', '2-1'),
-    ('2103', 'student', '2-1'),
-    ('2104', 'student', '2-1'),
-    ('2105', 'student', '2-1'),
-    ('2106', 'student', '2-1'),
-    ('2107', 'student', '2-1'),
-    ('2108', 'student', '2-1'),
-    ('2109', 'student', '2-1'),
-    ('2110', 'student', '2-1'),
-    ('2201', 'student', '2-2'),
-    ('2202', 'student', '2-2'),
-    ('2203', 'student', '2-2'),
-    ('2204', 'student', '2-2'),
-    ('2205', 'student', '2-2'),
-    ('2206', 'student', '2-2'),
-    ('2207', 'student', '2-2'),
-    ('2208', 'student', '2-2'),
-    ('2209', 'student', '2-2'),
-    ('2210', 'student', '2-2'),
-    ('2301', 'student', '2-3'),
-    ('2302', 'student', '2-3'),
-    ('2303', 'student', '2-3'),
-    ('2304', 'student', '2-3'),
-    ('2305', 'student', '2-3'),
-    ('2306', 'student', '2-3'),
-    ('2307', 'student', '2-3'),
-    ('2308', 'student', '2-3'),
-    ('2309', 'student', '2-3'),
-    ('2310', 'student', '2-3'),
-    ('2401', 'student', '2-4'),
-    ('2402', 'student', '2-4'),
-    ('2403', 'student', '2-4'),
-    ('2404', 'student', '2-4'),
-    ('2405', 'student', '2-4'),
-    ('2406', 'student', '2-4'),
-    ('2407', 'student', '2-4'),
-    ('2408', 'student', '2-4'),
-    ('2409', 'student', '2-4'),
-    ('2410', 'student', '2-4'),
-    ('3101', 'student', '3-1'),
-    ('3102', 'student', '3-1'),
-    ('3103', 'student', '3-1'),
-    ('3104', 'student', '3-1'),
-    ('3105', 'student', '3-1'),
-    ('3106', 'student', '3-1'),
-    ('3107', 'student', '3-1'),
-    ('3108', 'student', '3-1'),
-    ('3109', 'student', '3-1'),
-    ('3110', 'student', '3-1'),
-    ('3201', 'student', '3-2'),
-    ('3202', 'student', '3-2'),
-    ('3203', 'student', '3-2'),
-    ('3204', 'student', '3-2'),
-    ('3205', 'student', '3-2'),
-    ('3206', 'student', '3-2'),
-    ('3207', 'student', '3-2'),
-    ('3208', 'student', '3-2'),
-    ('3209', 'student', '3-2'),
-    ('3210', 'student', '3-2'),
-    ('3301', 'student', '3-3'),
-    ('3302', 'student', '3-3'),
-    ('3303', 'student', '3-3'),
-    ('3304', 'student', '3-3'),
-    ('3305', 'student', '3-3'),
-    ('3306', 'student', '3-3'),
-    ('3307', 'student', '3-3'),
-    ('3308', 'student', '3-3'),
-    ('3309', 'student', '3-3'),
-    ('3310', 'student', '3-3'),
-    ('3401', 'student', '3-4'),
-    ('3402', 'student', '3-4'),
-    ('3403', 'student', '3-4'),
-    ('3404', 'student', '3-4'),
-    ('3405', 'student', '3-4'),
-    ('3406', 'student', '3-4'),
-    ('3407', 'student', '3-4'),
-    ('3408', 'student', '3-4'),
-    ('3409', 'student', '3-4'),
-    ('3410', 'student', '3-4'),
-    ('4101', 'student', '4-1'),
-    ('4102', 'student', '4-1'),
-    ('4103', 'student', '4-1'),
-    ('4104', 'student', '4-1'),
-    ('4105', 'student', '4-1'),
-    ('4106', 'student', '4-1'),
-    ('4107', 'student', '4-1'),
-    ('4108', 'student', '4-1'),
-    ('4109', 'student', '4-1'),
-    ('4110', 'student', '4-1'),
-    ('4201', 'student', '4-2'),
-    ('4202', 'student', '4-2'),
-    ('4203', 'student', '4-2'),
-    ('4204', 'student', '4-2'),
-    ('4205', 'student', '4-2'),
-    ('4206', 'student', '4-2'),
-    ('4207', 'student', '4-2'),
-    ('4208', 'student', '4-2'),
-    ('4209', 'student', '4-2'),
-    ('4210', 'student', '4-2'),
-    ('4301', 'student', '4-3'),
-    ('4302', 'student', '4-3'),
-    ('4303', 'student', '4-3'),
-    ('4304', 'student', '4-3'),
-    ('4305', 'student', '4-3'),
-    ('4306', 'student', '4-3'),
-    ('4307', 'student', '4-3'),
-    ('4308', 'student', '4-3'),
-    ('4309', 'student', '4-3'),
-    ('4310', 'student', '4-3'),
-    ('4401', 'student', '4-4'),
-    ('4402', 'student', '4-4'),
-    ('4403', 'student', '4-4'),
-    ('4404', 'student', '4-4'),
-    ('4405', 'student', '4-4'),
-    ('4406', 'student', '4-4'),
-    ('4407', 'student', '4-4'),
-    ('4408', 'student', '4-4'),
-    ('4409', 'student', '4-4'),
-    ('4410', 'student', '4-4'),
-    ('9001', 'mentor', null),
-    ('9002', 'mentor', null),
-    ('9003', 'mentor', null),
-    ('9004', 'mentor', null),
-    ('9005', 'mentor', null),
-    ('8001', 'pedagog', null),
-    ('8002', 'pedagog', null)
-  on conflict (code) do nothing;
-
-  insert into public.profiles (id, nick, nick_norm, role, class_id, onboarded, is_seed, created_at) values
-    ('a0000000-0000-4000-8000-000000000001', 'luna.k', private.normalize_nick('luna.k'), 'student', '1-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000002', 'marko_99', private.normalize_nick('marko_99'), 'student', '1-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000003', 'tea.art', private.normalize_nick('tea.art'), 'student', '1-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000004', 'nikola7', private.normalize_nick('nikola7'), 'student', '1-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000005', 'sara.slatko', private.normalize_nick('sara.slatko'), 'student', '1-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000006', 'vuk', private.normalize_nick('vuk'), 'student', '1-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000007', 'mia_mix', private.normalize_nick('mia_mix'), 'student', '1-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000008', 'dejo', private.normalize_nick('dejo'), 'student', '1-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000009', 'ana.vodi', private.normalize_nick('ana.vodi'), 'student', '2-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000010', 'bojan.b', private.normalize_nick('bojan.b'), 'student', '2-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000011', 'lena', private.normalize_nick('lena'), 'student', '2-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000012', 'stefan.ritam', private.normalize_nick('stefan.ritam'), 'student', '2-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000013', 'jana_torte', private.normalize_nick('jana_torte'), 'student', '2-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000014', 'petar.chef', private.normalize_nick('petar.chef'), 'student', '2-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000015', 'iva.shake', private.normalize_nick('iva.shake'), 'student', '2-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000016', 'milos', private.normalize_nick('milos'), 'student', '2-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000017', 'kaća', private.normalize_nick('kaća'), 'student', '3-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000018', 'dusan.foto', private.normalize_nick('dusan.foto'), 'student', '3-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000019', 'eli.ples', private.normalize_nick('eli.ples'), 'student', '3-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000020', 'andrej.gg', private.normalize_nick('andrej.gg'), 'student', '3-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000021', 'maja.mural', private.normalize_nick('maja.mural'), 'student', '3-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000022', 'ognjen', private.normalize_nick('ognjen'), 'student', '3-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000023', 'tamara', private.normalize_nick('tamara'), 'student', '3-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000024', 'luka.bas', private.normalize_nick('luka.bas'), 'student', '3-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000025', 'mina.pise', private.normalize_nick('mina.pise'), 'student', '4-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000026', 'filip.cut', private.normalize_nick('filip.cut'), 'student', '4-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000027', 'nina', private.normalize_nick('nina'), 'student', '4-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000028', 'relja', private.normalize_nick('relja'), 'student', '4-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000029', 'zara', private.normalize_nick('zara'), 'student', '4-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000030', 'bane.drums', private.normalize_nick('bane.drums'), 'student', '4-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000031', 'ena.crta', private.normalize_nick('ena.crta'), 'student', '1-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000032', 'igor', private.normalize_nick('igor'), 'student', '1-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000033', 'sofija.en', private.normalize_nick('sofija.en'), 'student', '1-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000034', 'dario', private.normalize_nick('dario'), 'student', '2-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000035', 'kiki', private.normalize_nick('kiki'), 'student', '2-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000036', 'lazar.beat', private.normalize_nick('lazar.beat'), 'student', '3-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000037', 'hana', private.normalize_nick('hana'), 'student', '3-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000038', 'teo', private.normalize_nick('teo'), 'student', '4-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000039', 'mila.m', private.normalize_nick('mila.m'), 'student', '4-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000040', 'pavle', private.normalize_nick('pavle'), 'student', '4-4', true, true, now() - interval '70 days')
-  on conflict (id) do nothing;
-
-  insert into public.profile_tags (profile_id, tag, kind) values
-    ('a0000000-0000-4000-8000-000000000001', 'crtanje', 'znam'),
-    ('a0000000-0000-4000-8000-000000000001', 'fotografija', 'volim'),
-    ('a0000000-0000-4000-8000-000000000002', 'sport', 'znam'),
-    ('a0000000-0000-4000-8000-000000000002', 'gaming', 'volim'),
-    ('a0000000-0000-4000-8000-000000000003', 'crtanje', 'znam'),
-    ('a0000000-0000-4000-8000-000000000003', 'ples', 'volim'),
-    ('a0000000-0000-4000-8000-000000000004', 'turizam', 'volim'),
-    ('a0000000-0000-4000-8000-000000000004', 'jezici', 'znam'),
-    ('a0000000-0000-4000-8000-000000000005', 'poslasticarstvo', 'znam'),
-    ('a0000000-0000-4000-8000-000000000005', 'kuvanje', 'volim'),
-    ('a0000000-0000-4000-8000-000000000006', 'kuvanje', 'znam'),
-    ('a0000000-0000-4000-8000-000000000006', 'sport', 'volim'),
-    ('a0000000-0000-4000-8000-000000000007', 'barmen', 'znam'),
-    ('a0000000-0000-4000-8000-000000000007', 'muzika', 'volim'),
-    ('a0000000-0000-4000-8000-000000000008', 'barmen', 'volim'),
-    ('a0000000-0000-4000-8000-000000000008', 'sport', 'znam'),
-    ('a0000000-0000-4000-8000-000000000009', 'turizam', 'znam'),
-    ('a0000000-0000-4000-8000-000000000009', 'jezici', 'znam'),
-    ('a0000000-0000-4000-8000-000000000009', 'fotografija', 'volim'),
-    ('a0000000-0000-4000-8000-000000000010', 'preduzetnistvo', 'znam'),
-    ('a0000000-0000-4000-8000-000000000010', 'programiranje', 'volim'),
-    ('a0000000-0000-4000-8000-000000000011', 'pisanje', 'znam'),
-    ('a0000000-0000-4000-8000-000000000011', 'podcast', 'volim'),
-    ('a0000000-0000-4000-8000-000000000012', 'bubnjevi', 'volim'),
-    ('a0000000-0000-4000-8000-000000000012', 'muzika', 'znam'),
-    ('a0000000-0000-4000-8000-000000000013', 'poslasticarstvo', 'znam'),
-    ('a0000000-0000-4000-8000-000000000013', 'crtanje', 'volim'),
-    ('a0000000-0000-4000-8000-000000000014', 'kuvanje', 'znam'),
-    ('a0000000-0000-4000-8000-000000000014', 'preduzetnistvo', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000015', 'barmen', 'znam'),
-    ('a0000000-0000-4000-8000-000000000015', 'ples', 'volim'),
-    ('a0000000-0000-4000-8000-000000000016', 'sport', 'znam'),
-    ('a0000000-0000-4000-8000-000000000016', 'muzika', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000017', 'preduzetnistvo', 'znam'),
-    ('a0000000-0000-4000-8000-000000000017', 'jezici', 'volim'),
-    ('a0000000-0000-4000-8000-000000000018', 'fotografija', 'znam'),
-    ('a0000000-0000-4000-8000-000000000018', 'video', 'volim'),
-    ('a0000000-0000-4000-8000-000000000019', 'ples', 'znam'),
-    ('a0000000-0000-4000-8000-000000000019', 'muzika', 'volim'),
-    ('a0000000-0000-4000-8000-000000000020', 'gaming', 'znam'),
-    ('a0000000-0000-4000-8000-000000000020', 'programiranje', 'znam'),
-    ('a0000000-0000-4000-8000-000000000021', 'crtanje', 'znam'),
-    ('a0000000-0000-4000-8000-000000000021', 'poslasticarstvo', 'volim'),
-    ('a0000000-0000-4000-8000-000000000022', 'kuvanje', 'volim'),
-    ('a0000000-0000-4000-8000-000000000022', 'bubnjevi', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000023', 'barmen', 'znam'),
-    ('a0000000-0000-4000-8000-000000000023', 'jezici', 'volim'),
-    ('a0000000-0000-4000-8000-000000000024', 'muzika', 'znam'),
-    ('a0000000-0000-4000-8000-000000000024', 'sport', 'volim'),
-    ('a0000000-0000-4000-8000-000000000025', 'pisanje', 'znam'),
-    ('a0000000-0000-4000-8000-000000000025', 'podcast', 'znam'),
-    ('a0000000-0000-4000-8000-000000000026', 'video', 'znam'),
-    ('a0000000-0000-4000-8000-000000000026', 'fotografija', 'volim'),
-    ('a0000000-0000-4000-8000-000000000027', 'turizam', 'znam'),
-    ('a0000000-0000-4000-8000-000000000027', 'ples', 'volim'),
-    ('a0000000-0000-4000-8000-000000000028', 'sport', 'znam'),
-    ('a0000000-0000-4000-8000-000000000028', 'turizam', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000029', 'poslasticarstvo', 'volim'),
-    ('a0000000-0000-4000-8000-000000000029', 'kuvanje', 'znam'),
-    ('a0000000-0000-4000-8000-000000000030', 'bubnjevi', 'znam'),
-    ('a0000000-0000-4000-8000-000000000030', 'muzika', 'volim'),
-    ('a0000000-0000-4000-8000-000000000031', 'crtanje', 'volim'),
-    ('a0000000-0000-4000-8000-000000000031', 'pisanje', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000032', 'kuvanje', 'volim'),
-    ('a0000000-0000-4000-8000-000000000032', 'gaming', 'znam'),
-    ('a0000000-0000-4000-8000-000000000033', 'jezici', 'znam'),
-    ('a0000000-0000-4000-8000-000000000033', 'turizam', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000034', 'barmen', 'volim'),
-    ('a0000000-0000-4000-8000-000000000034', 'sport', 'volim'),
-    ('a0000000-0000-4000-8000-000000000035', 'poslasticarstvo', 'volim'),
-    ('a0000000-0000-4000-8000-000000000035', 'fotografija', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000036', 'bubnjevi', 'volim'),
-    ('a0000000-0000-4000-8000-000000000036', 'gaming', 'volim'),
-    ('a0000000-0000-4000-8000-000000000037', 'ples', 'volim'),
-    ('a0000000-0000-4000-8000-000000000037', 'muzika', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000038', 'programiranje', 'volim'),
-    ('a0000000-0000-4000-8000-000000000038', 'preduzetnistvo', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000039', 'pisanje', 'volim'),
-    ('a0000000-0000-4000-8000-000000000039', 'crtanje', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000040', 'sport', 'volim'),
-    ('a0000000-0000-4000-8000-000000000040', 'kuvanje', 'ucim')
-  on conflict do nothing;
-
-  insert into public.projects (id, title, goal, icon, spots, status, leader_id, created_at, approved_at, completed_at, deadline, result_text) values
-    ('b0000000-0000-4000-8000-000000000001', 'Ketering za školsku proslavu traži poslastičara', 'Slatki sto za 150 gostiju na proslavi Dana škole.', '🧁', 3, 'open', 'a0000000-0000-4000-8000-000000000014', now() - interval '9 days', now() - interval '8 days', null, current_date + 18, null),
-    ('b0000000-0000-4000-8000-000000000002', 'Tura kroz Stari Bar traži vodiča na engleskom', 'Šetnja za goste iz partnerske škole iz Italije.', '🧭', 2, 'open', 'a0000000-0000-4000-8000-000000000009', now() - interval '8 days', now() - interval '7 days', null, current_date + 21, null),
-    ('b0000000-0000-4000-8000-000000000003', 'Školski mural traži nekoga ko crta', 'Mural na zidu kod sale: „Naša škola, naš sto“.', '🎨', 3, 'open', 'a0000000-0000-4000-8000-000000000021', now() - interval '14 days', now() - interval '13 days', null, current_date + 14, null),
-    ('b0000000-0000-4000-8000-000000000004', 'Bendu fali bubnjar', 'Tri pjesme za školsku žurku na kraju polugodišta.', '🥁', 2, 'open', 'a0000000-0000-4000-8000-000000000024', now() - interval '6 days', now() - interval '5 days', null, current_date + 30, null),
-    ('b0000000-0000-4000-8000-000000000005', 'Bezalkoholni kokteli za Dan škole traže barmena', 'Meni od pet mocktaila i posluženje za goste.', '🍹', 2, 'open', 'a0000000-0000-4000-8000-000000000023', now() - interval '5 days', now() - interval '4 days', null, current_date + 18, null),
-    ('b0000000-0000-4000-8000-000000000006', 'Turnir u odbojci traži organizatore', 'Međuodjeljenski turnir: raspored, sudije, medalje.', '🏐', 3, 'open', 'a0000000-0000-4000-8000-000000000028', now() - interval '10 days', now() - interval '9 days', null, current_date + 25, null),
-    ('b0000000-0000-4000-8000-000000000007', 'Mini sajam učeničke zadruge traži prodavce', 'Štand sa domaćim proizvodima i cjenovnikom na dva jezika.', '💼', 3, 'open', 'a0000000-0000-4000-8000-000000000017', now() - interval '7 days', now() - interval '6 days', null, current_date + 20, null),
-    ('b0000000-0000-4000-8000-000000000008', 'Foto-priča „Ljudi naše škole“ traži fotografa', 'Deset portreta i kratkih priča za hodnik prvog sprata.', '📷', 2, 'open', 'a0000000-0000-4000-8000-000000000011', now() - interval '4 days', now() - interval '3 days', null, current_date + 28, null),
-    ('b0000000-0000-4000-8000-000000000009', 'Plesna tačka za maturu traži plesače', 'Koreografija od tri minuta za maturski program.', '💃', 4, 'open', 'a0000000-0000-4000-8000-000000000019', now() - interval '3 days', now() - interval '2 days', null, current_date + 40, null),
-    ('b0000000-0000-4000-8000-000000000011', 'Školski podcast: 1. epizoda je vani', 'Prva epizoda o praksi u hotelima.', '🎙️', 3, 'done', 'a0000000-0000-4000-8000-000000000025', now() - interval '40 days', now() - interval '39 days', now() - interval '6 days', current_date + -5, 'Snimili smo 25 minuta razgovora sa učenicima sa prakse u Budvi. Epizoda je na školskom sajtu!'),
-    ('b0000000-0000-4000-8000-000000000012', 'Kuvar za jedan dan: radionica za osnovce', 'Radionica pravljenja palačinki za 30 osnovaca.', '👩‍🍳', 3, 'done', 'a0000000-0000-4000-8000-000000000029', now() - interval '35 days', now() - interval '34 days', now() - interval '10 days', current_date + -9, '30 osnovaca, 200 palačinki i nijedna izgorjela. Recepte smo podijelili roditeljima.'),
-    ('b0000000-0000-4000-8000-000000000013', 'Mini igra o istoriji škole', 'Kviz-igra za Dan otvorenih vrata.', '🎮', 2, 'done', 'a0000000-0000-4000-8000-000000000020', now() - interval '50 days', now() - interval '49 days', now() - interval '15 days', current_date + -14, 'Igru je na Danu otvorenih vrata odigralo 120 posjetilaca. Kod je otvoren za sljedeću generaciju.'),
-    ('b0000000-0000-4000-8000-000000000014', 'Novogodišnji štand učeničke zadruge', 'Prodaja kolača i čestitki za humanitarnu akciju.', '🎄', 3, 'done', 'a0000000-0000-4000-8000-000000000010', now() - interval '60 days', now() - interval '59 days', now() - interval '20 days', current_date + -19, 'Prikupili smo 640 € za opremu dječjeg odjeljenja bolnice.')
-  on conflict (id) do nothing;
-
-  insert into public.project_tags (project_id, tag) values
-    ('b0000000-0000-4000-8000-000000000001', 'poslasticarstvo'),
-    ('b0000000-0000-4000-8000-000000000001', 'kuvanje'),
-    ('b0000000-0000-4000-8000-000000000002', 'turizam'),
-    ('b0000000-0000-4000-8000-000000000002', 'jezici'),
-    ('b0000000-0000-4000-8000-000000000003', 'crtanje'),
-    ('b0000000-0000-4000-8000-000000000004', 'bubnjevi'),
-    ('b0000000-0000-4000-8000-000000000004', 'muzika'),
-    ('b0000000-0000-4000-8000-000000000005', 'barmen'),
-    ('b0000000-0000-4000-8000-000000000006', 'sport'),
-    ('b0000000-0000-4000-8000-000000000006', 'preduzetnistvo'),
-    ('b0000000-0000-4000-8000-000000000007', 'preduzetnistvo'),
-    ('b0000000-0000-4000-8000-000000000007', 'jezici'),
-    ('b0000000-0000-4000-8000-000000000008', 'fotografija'),
-    ('b0000000-0000-4000-8000-000000000008', 'pisanje'),
-    ('b0000000-0000-4000-8000-000000000009', 'ples'),
-    ('b0000000-0000-4000-8000-000000000009', 'muzika'),
-    ('b0000000-0000-4000-8000-000000000011', 'podcast'),
-    ('b0000000-0000-4000-8000-000000000011', 'video'),
-    ('b0000000-0000-4000-8000-000000000012', 'kuvanje'),
-    ('b0000000-0000-4000-8000-000000000012', 'poslasticarstvo'),
-    ('b0000000-0000-4000-8000-000000000013', 'programiranje'),
-    ('b0000000-0000-4000-8000-000000000013', 'gaming'),
-    ('b0000000-0000-4000-8000-000000000013', 'pisanje'),
-    ('b0000000-0000-4000-8000-000000000014', 'preduzetnistvo'),
-    ('b0000000-0000-4000-8000-000000000014', 'poslasticarstvo'),
-    ('b0000000-0000-4000-8000-000000000014', 'crtanje')
-  on conflict do nothing;
-
-  insert into public.group_members (project_id, profile_id, joined_at) values
-    ('b0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000014', now() - interval '8 days'),
-    ('b0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000009', now() - interval '7 days'),
-    ('b0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000021', now() - interval '13 days'),
-    ('b0000000-0000-4000-8000-000000000004', 'a0000000-0000-4000-8000-000000000024', now() - interval '5 days'),
-    ('b0000000-0000-4000-8000-000000000005', 'a0000000-0000-4000-8000-000000000023', now() - interval '4 days'),
-    ('b0000000-0000-4000-8000-000000000006', 'a0000000-0000-4000-8000-000000000028', now() - interval '9 days'),
-    ('b0000000-0000-4000-8000-000000000007', 'a0000000-0000-4000-8000-000000000017', now() - interval '6 days'),
-    ('b0000000-0000-4000-8000-000000000008', 'a0000000-0000-4000-8000-000000000011', now() - interval '3 days'),
-    ('b0000000-0000-4000-8000-000000000009', 'a0000000-0000-4000-8000-000000000019', now() - interval '2 days'),
-    ('b0000000-0000-4000-8000-000000000011', 'a0000000-0000-4000-8000-000000000025', now() - interval '39 days'),
-    ('b0000000-0000-4000-8000-000000000012', 'a0000000-0000-4000-8000-000000000029', now() - interval '34 days'),
-    ('b0000000-0000-4000-8000-000000000013', 'a0000000-0000-4000-8000-000000000020', now() - interval '49 days'),
-    ('b0000000-0000-4000-8000-000000000014', 'a0000000-0000-4000-8000-000000000010', now() - interval '59 days'),
-    ('b0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000005', now() - interval '7 days'),
-    ('b0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000013', now() - interval '7 days'),
-    ('b0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000004', now() - interval '6 days'),
-    ('b0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000003', now() - interval '12 days'),
-    ('b0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', now() - interval '12 days'),
-    ('b0000000-0000-4000-8000-000000000004', 'a0000000-0000-4000-8000-000000000012', now() - interval '4 days'),
-    ('b0000000-0000-4000-8000-000000000005', 'a0000000-0000-4000-8000-000000000007', now() - interval '3 days'),
-    ('b0000000-0000-4000-8000-000000000006', 'a0000000-0000-4000-8000-000000000002', now() - interval '8 days'),
-    ('b0000000-0000-4000-8000-000000000006', 'a0000000-0000-4000-8000-000000000016', now() - interval '8 days'),
-    ('b0000000-0000-4000-8000-000000000007', 'a0000000-0000-4000-8000-000000000008', now() - interval '5 days'),
-    ('b0000000-0000-4000-8000-000000000008', 'a0000000-0000-4000-8000-000000000018', now() - interval '2 days'),
-    ('b0000000-0000-4000-8000-000000000009', 'a0000000-0000-4000-8000-000000000015', now() - interval '1 days'),
-    ('b0000000-0000-4000-8000-000000000009', 'a0000000-0000-4000-8000-000000000027', now() - interval '1 days'),
-    ('b0000000-0000-4000-8000-000000000011', 'a0000000-0000-4000-8000-000000000026', now() - interval '38 days'),
-    ('b0000000-0000-4000-8000-000000000011', 'a0000000-0000-4000-8000-000000000011', now() - interval '38 days'),
-    ('b0000000-0000-4000-8000-000000000012', 'a0000000-0000-4000-8000-000000000006', now() - interval '33 days'),
-    ('b0000000-0000-4000-8000-000000000012', 'a0000000-0000-4000-8000-000000000022', now() - interval '33 days'),
-    ('b0000000-0000-4000-8000-000000000014', 'a0000000-0000-4000-8000-000000000013', now() - interval '58 days'),
-    ('b0000000-0000-4000-8000-000000000014', 'a0000000-0000-4000-8000-000000000017', now() - interval '58 days'),
-    ('b0000000-0000-4000-8000-000000000014', 'a0000000-0000-4000-8000-000000000030', now() - interval '58 days')
-  on conflict do nothing;
-
-  insert into public.wall_posts (project_id, author_id, kind, body, created_at) values
-    ('b0000000-0000-4000-8000-000000000003', null, 'system', 'Projekat je odobren. Srećno, tim! 🚀', now() - interval '13 days'),
-    ('b0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000021', 'post', 'Skica je odobrena! Boje stižu u petak.', now() - interval '6 days'),
-    ('b0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000003', 'post', 'Ja donosim šablone za sunce 🌞', now() - interval '2 days'),
-    ('b0000000-0000-4000-8000-000000000001', null, 'system', 'Projekat je odobren. Srećno, tim! 🚀', now() - interval '8 days'),
-    ('b0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000014', 'post', 'Probni dan u kuhinji: srijeda, 7. čas.', now() - interval '3 days'),
-    ('b0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000009', 'post', 'Ruta: Kapija → Akvadukt → Sahat-kula. Treba nam još neko za engleski!', now() - interval '4 days'),
-    ('b0000000-0000-4000-8000-000000000004', 'a0000000-0000-4000-8000-000000000024', 'post', 'Proba u muzičkom kabinetu, petak poslije škole.', now() - interval '2 days'),
-    ('b0000000-0000-4000-8000-000000000011', null, 'system', 'Projekat je završen! Rezultat je sada u feedu škole. 🎉', now() - interval '6 days')
-;
-
-  insert into private.first_group_events (profile_id, at) values
-    ('a0000000-0000-4000-8000-000000000003', now() - interval '12 days'),
-    ('a0000000-0000-4000-8000-000000000004', now() - interval '6 days'),
-    ('a0000000-0000-4000-8000-000000000008', now() - interval '5 days'),
-    ('a0000000-0000-4000-8000-000000000018', now() - interval '2 days'),
-    ('a0000000-0000-4000-8000-000000000027', now() - interval '1 days')
-;
-end $seed$;
-
-revoke all on function private.load_seed() from public, anon, authenticated;
-
-
-
--- >>> migrations/0008_opportunities.sql
--- ═════════════════════════════════════════════════════════════
---  ConnectEd · 0008 · Prilike van škole
---  Takmičenja, hakatoni, radionice, predavanja, konkursi, volontiranje.
---  „Za tebe“ = oblast prilike se poklapa sa oznakama učenika.
---  „Zanima me — prijavi me“ vidi samo učenik; niko ne dobija spisak.
---  „Ko ide sa mnom? Napravi tim“ pravi običan projekat vezan za priliku
---  (ide mentoru na odobrenje i dalje kroz isto spajanje).
--- ═════════════════════════════════════════════════════════════
-
-create type public.opportunity_kind as enum
-  ('takmicenje', 'hakaton', 'radionica', 'predavanje', 'konkurs', 'volontiranje');
-
-create table public.opportunities (
-  id              uuid primary key default gen_random_uuid(),
-  title           text not null check (char_length(title) between 3 and 100),
-  kind            public.opportunity_kind not null,
-  organizer       text not null check (char_length(organizer) between 1 and 100),
-  deadline        date,
-  place           text not null default '' check (char_length(place) <= 100),
-  audience        text not null default '' check (char_length(audience) <= 120),
-  description     text not null default '' check (char_length(description) <= 800),
-  posted_by       uuid references public.profiles (id) on delete set null,
-  posted_by_label text not null default '',
-  created_at      timestamptz not null default now()
-);
-create index on public.opportunities (deadline);
-
-create table public.opportunity_tags (
-  opportunity_id uuid not null references public.opportunities (id) on delete cascade,
-  tag            text not null references public.tags (slug),
-  primary key (opportunity_id, tag)
-);
-
-create table public.opportunity_interest (
-  opportunity_id uuid not null references public.opportunities (id) on delete cascade,
-  profile_id     uuid not null references public.profiles (id) on delete cascade,
-  created_at     timestamptz not null default now(),
-  primary key (opportunity_id, profile_id)
-);
-create index on public.opportunity_interest (profile_id);
-
-alter table public.projects      add column opportunity_id uuid references public.opportunities (id) on delete set null;
-alter table public.notifications add column opportunity_id uuid references public.opportunities (id) on delete cascade;
-
--- ─── RLS ─────────────────────────────────────────────────────
-alter table public.opportunities        enable row level security;
-alter table public.opportunity_tags     enable row level security;
-alter table public.opportunity_interest enable row level security;
-revoke insert, update, delete, truncate on public.opportunities, public.opportunity_tags, public.opportunity_interest from anon, authenticated;
-revoke select on public.opportunities, public.opportunity_tags, public.opportunity_interest from anon;
-
-create policy opportunities_read on public.opportunities for select to authenticated using (true);
-create policy opportunity_tags_read on public.opportunity_tags for select to authenticated using (true);
--- „Prijavljen/a“ vidi samo učenik sam.
-create policy opportunity_interest_own on public.opportunity_interest for select to authenticated
-  using (profile_id = private.my_profile_id());
-
--- ─── JSON ────────────────────────────────────────────────────
-create or replace function private.opportunity_json(p_id uuid, p_me uuid)
-returns jsonb language sql stable security definer set search_path = '' as $$
-  select jsonb_build_object(
-    'id', o.id, 'title', o.title, 'kind', o.kind, 'organizer', o.organizer, 'deadline', o.deadline,
-    'place', o.place, 'audience', o.audience, 'description', o.description,
-    'posted_by', coalesce((select u.nick from public.profiles u where u.id = o.posted_by), nullif(o.posted_by_label, ''), 'Škola'),
-    'created_at', o.created_at,
-    'tags', coalesce((select jsonb_agg(x.tag order by t.sort) from public.opportunity_tags x
-                      join public.tags t on t.slug = x.tag where x.opportunity_id = o.id), '[]'::jsonb),
-    'for_me', exists (select 1 from public.opportunity_tags x join public.profile_tags pt on pt.tag = x.tag
-                      where x.opportunity_id = o.id and pt.profile_id = p_me),
-    'interested', exists (select 1 from public.opportunity_interest i where i.opportunity_id = o.id and i.profile_id = p_me),
-    'teams', coalesce((select jsonb_agg(jsonb_build_object('id', p.id, 'title', p.title, 'icon', p.icon,
-                                                           'free', private.free_spots(p.id), 'leader_nick', l.nick,
-                                                           'is_member', exists (select 1 from public.group_members m
-                                                             where m.project_id = p.id and m.profile_id = p_me and m.left_at is null))
-                                        order by p.approved_at)
-                       from public.projects p join public.profiles l on l.id = p.leader_id
-                       where p.opportunity_id = o.id and p.status = 'open'), '[]'::jsonb)
+-- Nikovi: „pridjev + životinja“ sa slaganjem roda (Zelena Sova, Brzi Delfin).
+create or replace function private.nick_pool()
+returns table (nick text) language sql immutable set search_path = '' as $$
+  with adj(m, f) as (values
+    ('Brzi', 'Brza'), ('Zeleni', 'Zelena'), ('Hrabri', 'Hrabra'), ('Mudri', 'Mudra'), ('Plavi', 'Plava'),
+    ('Veseli', 'Vesela'), ('Tihi', 'Tiha'), ('Zlatni', 'Zlatna'), ('Smjeli', 'Smjela'), ('Radoznali', 'Radoznala'),
+    ('Crveni', 'Crvena'), ('Srebrni', 'Srebrna'), ('Sjajni', 'Sjajna'), ('Vrijedni', 'Vrijedna'), ('Mirni', 'Mirna'),
+    ('Snažni', 'Snažna'), ('Ljubičasti', 'Ljubičasta'), ('Narandžasti', 'Narandžasta'), ('Spretni', 'Spretna'), ('Vedri', 'Vedra')
+  ), animal(name, g) as (values
+    ('Delfin', 'm'), ('Vuk', 'm'), ('Soko', 'm'), ('Ris', 'm'), ('Medvjed', 'm'), ('Jež', 'm'),
+    ('Orao', 'm'), ('Pingvin', 'm'), ('Tigar', 'm'), ('Lav', 'm'), ('Gavran', 'm'), ('Zec', 'm'),
+    ('Sova', 'f'), ('Lisica', 'f'), ('Kornjača', 'f'), ('Vjeverica', 'f'), ('Panda', 'f'), ('Žirafa', 'f'),
+    ('Pčela', 'f'), ('Lasta', 'f'), ('Koala', 'f'), ('Srna', 'f'), ('Mačka', 'f'), ('Zebra', 'f')
   )
-  from public.opportunities o where o.id = p_id
+  select case a.g when 'm' then adj.m else adj.f end || ' ' || a.name from adj cross join animal a
 $$;
 
--- Projekat sada nosi i vezu sa prilikom.
-create or replace function private.project_json(p_id uuid, p_me uuid)
-returns jsonb language sql stable security definer set search_path = '' as $$
-  select jsonb_build_object(
-    'id', p.id, 'title', p.title, 'goal', p.goal, 'deadline', p.deadline,
-    'spots', p.spots, 'free', private.free_spots(p.id), 'icon', p.icon, 'status', p.status,
-    'created_at', p.created_at, 'approved_at', p.approved_at, 'completed_at', p.completed_at,
-    'result_text', p.result_text,
-    'tags', coalesce((select jsonb_agg(x.tag order by t.sort) from public.project_tags x
-                      join public.tags t on t.slug = x.tag where x.project_id = p.id), '[]'::jsonb),
-    'leader_nick', (select nick from public.profiles where id = p.leader_id),
+-- Dozvoljen nik: iz skupa, ili iz skupa + „ 2“…„ 9“ (kad se osnovni skup potroši).
+create or replace function private.is_pool_nick(n text)
+returns boolean language sql immutable set search_path = '' as $$
+  select exists (select 1 from private.nick_pool() p where p.nick = regexp_replace(n, ' [2-9]$', ''))
+$$;
+
+create or replace function private.fail(msg text, code text)
+returns void language plpgsql set search_path = '' as $$
+begin
+  raise exception using message = msg, hint = 'ce:' || code;
+end $$;
+
+-- Profil prijavljenog korisnika (ili greška).
+create or replace function private.me()
+returns public.profiles language plpgsql stable security definer set search_path = '' as $$
+declare p public.profiles;
+begin
+  if auth.uid() is null then perform private.fail('Nema sesije. Osvježi stranicu.', 'no_session'); end if;
+  select * into p from public.profiles where user_id = auth.uid();
+  if not found then perform private.fail('Nalog više ne postoji. Osvježi stranicu.', 'no_profile'); end if;
+  return p;
+end $$;
+
+create or replace function private.me_student()
+returns public.profiles language plpgsql stable security definer set search_path = '' as $$
+declare p public.profiles := private.me();
+begin
+  if p.role <> 'student' then perform private.fail('Ovo je za učesnike. Mentor koristi /admin.', 'not_student'); end if;
+  if p.nick is null then perform private.fail('Prvo izaberi ime.', 'no_nick'); end if;
+  return p;
+end $$;
+
+create or replace function private.require_mentor()
+returns public.profiles language plpgsql stable security definer set search_path = '' as $$
+declare p public.profiles := private.me();
+begin
+  if p.role <> 'mentor' then perform private.fail('Samo za mentore.', 'not_mentor'); end if;
+  return p;
+end $$;
+
+create or replace function private.me_json(p public.profiles)
+returns json language sql stable security definer set search_path = '' as $$
+  select json_build_object(
+    'id', p.id,
+    'nick', p.nick,
+    'role', p.role,
+    'code', (select c.code from public.demo_codes c where c.used_by = p.id),
+    'tags', coalesce((select json_agg(t.tag order by g.sort) from public.profile_tags t join public.tags g on g.slug = t.tag where t.profile_id = p.id), '[]'::json)
+  )
+$$;
+
+create or replace function private.project_json(pr public.projects, viewer uuid)
+returns json language sql stable security definer set search_path = '' as $$
+  select json_build_object(
+    'id', pr.id,
+    'title', pr.title,
+    'sentence', pr.sentence,
+    'deadline', pr.deadline,
+    'tag', pr.tag,
+    'join_text', pr.join_text,
+    'status', pr.status,
+    'is_fallback', pr.is_fallback,
+    'member_count', (select count(*) from public.memberships m where m.project_id = pr.id),
     'members', coalesce((
-      select jsonb_agg(jsonb_build_object('nick', u.nick, 'class_label', c.label,
-                                          'is_leader', u.id = p.leader_id) order by m.joined_at)
-      from public.group_members m
-      join public.profiles u on u.id = m.profile_id
-      left join public.classes c on c.id = u.class_id
-      where m.project_id = p.id and m.left_at is null), '[]'::jsonb),
-    'class_count', (select count(distinct u.class_id) from public.group_members m
-                    join public.profiles u on u.id = m.profile_id
-                    where m.project_id = p.id and m.left_at is null),
-    'is_member', exists (select 1 from public.group_members m
-                         where m.project_id = p.id and m.profile_id = p_me and m.left_at is null),
-    'is_leader', p.leader_id = p_me,
-    'invite', (select jsonb_build_object('id', i.id, 'reason_tag', i.reason_tag, 'reason_kind', i.reason_kind)
-               from public.invites i
-               where i.project_id = p.id and i.profile_id = p_me and i.status = 'pending'),
-    'opportunity', (select jsonb_build_object('id', o.id, 'title', o.title, 'kind', o.kind)
-                    from public.opportunities o where o.id = p.opportunity_id)
+      select json_agg(x.nick) from (
+        select p.nick from public.memberships m join public.profiles p on p.id = m.profile_id
+        where m.project_id = pr.id order by m.joined_at desc limit 12
+      ) x), '[]'::json),
+    'is_member', exists (select 1 from public.memberships m where m.project_id = pr.id and m.profile_id = viewer)
   )
-  from public.projects p where p.id = p_id
 $$;
 
--- Obavještenja o prilikama koje odgovaraju učeniku (najviše 3 odjednom, bez ponavljanja).
-create or replace function private.notify_opportunities(p_profile uuid)
+create or replace function private.invite_json(i public.invites)
+returns json language sql stable security definer set search_path = '' as $$
+  select json_build_object(
+    'id', i.id,
+    'reason_tag', i.reason_tag,
+    'status', i.status,
+    'project', private.project_json(pr, i.profile_id)
+  ) from public.projects pr where pr.id = i.project_id
+$$;
+
+create or replace function private.add_event(p_nick text, p_text text)
 returns void language sql security definer set search_path = '' as $$
-  insert into public.notifications (profile_id, kind, opportunity_id, body)
-  select p_profile, 'opportunity', o.id, 'Prilika za tebe: „' || o.title || '“'
-  from public.opportunities o
-  where (o.deadline is null or o.deadline >= current_date)
-    and exists (select 1 from public.opportunity_tags x join public.profile_tags pt on pt.tag = x.tag
-                where x.opportunity_id = o.id and pt.profile_id = p_profile)
-    and not exists (select 1 from public.notifications n where n.profile_id = p_profile and n.opportunity_id = o.id)
-  order by o.deadline nulls last, o.created_at
-  limit 3
+  insert into public.demo_events (nick, text) values (p_nick, p_text);
 $$;
 
--- ─── RPC ─────────────────────────────────────────────────────
-create or replace function public.get_opportunities()
-returns jsonb language plpgsql stable security definer set search_path = '' as $$
-declare v_me public.profiles := private.me();
-begin
-  return coalesce((
-    select jsonb_agg(j order by (j->>'for_me')::boolean desc, (j->>'deadline') nulls last, j->>'created_at' desc)
-    from (select private.opportunity_json(o.id, v_me.id) j from public.opportunities o
-          where o.deadline is null or o.deadline >= current_date) s
-  ), '[]'::jsonb);
-end $$;
-
-create or replace function public.get_opportunity(p_id uuid)
-returns jsonb language plpgsql stable security definer set search_path = '' as $$
-declare v_me public.profiles := private.me();
-begin
-  return private.opportunity_json(p_id, v_me.id);
-end $$;
-
--- „Zanima me — prijavi me“ (ponovni dodir poništava). Vraća novo stanje.
-create or replace function public.toggle_opportunity_interest(p_id uuid)
+-- Ulazak u tim (mjesta su neograničena). Vraća true ako je učesnik upravo ušao.
+create or replace function private.join_internal(p public.profiles, p_project uuid)
 returns boolean language plpgsql security definer set search_path = '' as $$
-declare v_me public.profiles := private.me();
+declare pr public.projects; n int;
 begin
-  if v_me.role <> 'student' then raise exception 'Prijavljuju se učenici.'; end if;
-  if not exists (select 1 from public.opportunities where id = p_id) then raise exception 'Prilika nije pronađena.'; end if;
-  delete from public.opportunity_interest where opportunity_id = p_id and profile_id = v_me.id;
-  if found then return false; end if;
-  insert into public.opportunity_interest (opportunity_id, profile_id) values (p_id, v_me.id);
-  return true;
+  select * into pr from public.projects where id = p_project;
+  if not found or pr.status <> 'open' then perform private.fail('Ovaj tim trenutno ne prima nove članove.', 'closed'); end if;
+  insert into public.memberships (project_id, profile_id) values (pr.id, p.id) on conflict do nothing;
+  get diagnostics n = row_count;
+  update public.invites set status = 'accepted', responded_at = now()
+    where project_id = pr.id and profile_id = p.id and status = 'pending';
+  if n > 0 then perform private.add_event(p.nick, 'se pridružuje ' || pr.join_text); end if;
+  return n > 0;
 end $$;
 
--- Mentor/pedagog objavljuje priliku; učenici sa poklapajućim oznakama dobijaju obavještenje.
-create or replace function public.create_opportunity(
-  p_title text, p_kind public.opportunity_kind, p_organizer text, p_deadline date,
-  p_place text, p_audience text, p_description text, p_tags text[])
-returns uuid language plpgsql security definer set search_path = '' as $$
-declare
-  v_me public.profiles := private.require_staff();
-  v_id uuid;
+-- ── Spajanje ─────────────────────────────────────────────────
+-- Za jednog učesnika (poziva se iz save_interests, u istom odgovoru):
+--  1. otvoren projekat čija oznaka je među učesnikovim oznakama, u kom nije i za koji nije pozvan;
+--     prednost ima tim sa manje članova (ravnomjerno punjenje), pa stariji projekat;
+--  2. inače već postojeći poziv na čekanju;
+--  3. inače, samo ako učesnik nije ni u jednom timu: rezervni poziv „STEM klub traži ljude sa idejama“.
+create or replace function private.match_invite(p_profile uuid)
+returns json language plpgsql security definer set search_path = '' as $$
+declare pr public.projects; i public.invites;
 begin
-  if coalesce(array_length(p_tags, 1), 0) = 0 then raise exception 'Izaberi bar jednu oblast.'; end if;
-  insert into public.opportunities (title, kind, organizer, deadline, place, audience, description, posted_by)
-  values (btrim(p_title), p_kind, btrim(p_organizer), p_deadline, btrim(coalesce(p_place, '')),
-          btrim(coalesce(p_audience, '')), btrim(coalesce(p_description, '')), v_me.id)
-  returning id into v_id;
-  insert into public.opportunity_tags (opportunity_id, tag)
-  select distinct v_id, t from unnest(p_tags) t where exists (select 1 from public.tags where slug = t);
-  insert into public.notifications (profile_id, kind, opportunity_id, body)
-  select u.id, 'opportunity', v_id, 'Prilika za tebe: „' || btrim(p_title) || '“'
-  from public.profiles u
-  where u.role = 'student' and u.onboarded
-    and exists (select 1 from public.opportunity_tags x join public.profile_tags pt on pt.tag = x.tag
-                where x.opportunity_id = v_id and pt.profile_id = u.id);
-  return v_id;
-end $$;
+  select x.* into pr from public.projects x
+  where x.status = 'open' and not x.is_fallback
+    and x.tag in (select t.tag from public.profile_tags t where t.profile_id = p_profile)
+    and not exists (select 1 from public.memberships m where m.project_id = x.id and m.profile_id = p_profile)
+    and not exists (select 1 from public.invites v where v.project_id = x.id and v.profile_id = p_profile)
+  order by (select count(*) from public.memberships m where m.project_id = x.id), x.created_at, x.id
+  limit 1;
 
--- Projekat (tim) može biti vezan za priliku.
-drop function if exists public.create_project(text, text, date, int, text[], text);
-create or replace function public.create_project(
-  p_title text, p_goal text, p_deadline date, p_spots int, p_tags text[], p_icon text default '✨',
-  p_opportunity uuid default null)
-returns uuid language plpgsql security definer set search_path = '' as $$
-declare
-  v_me public.profiles := private.me();
-  v_id uuid;
-begin
-  if v_me.role <> 'student' then raise exception 'Projekte pokreću učenici.'; end if;
-  if (select count(*) from public.projects where leader_id = v_me.id and status = 'pending') >= 3 then
-    raise exception 'Već imaš 3 projekta koja čekaju odobrenje.';
+  if found then
+    insert into public.invites (project_id, profile_id, reason_tag) values (pr.id, p_profile, pr.tag)
+      on conflict (project_id, profile_id) do nothing;
+  else
+    select v.* into i from public.invites v join public.projects x on x.id = v.project_id
+      where v.profile_id = p_profile and v.status = 'pending' and x.status = 'open'
+      order by v.created_at desc limit 1;
+    if found then return private.invite_json(i); end if;
+
+    if exists (select 1 from public.memberships m where m.profile_id = p_profile) then return null; end if;
+    select x.* into pr from public.projects x
+      where x.status = 'open' and x.is_fallback
+        and not exists (select 1 from public.invites v where v.project_id = x.id and v.profile_id = p_profile)
+      order by x.created_at limit 1;
+    if not found then return null; end if;
+    insert into public.invites (project_id, profile_id, reason_tag) values (pr.id, p_profile, null)
+      on conflict (project_id, profile_id) do nothing;
   end if;
-  if coalesce(array_length(p_tags, 1), 0) = 0 then raise exception 'Izaberi bar jednu oznaku.'; end if;
-  if p_opportunity is not null and not exists (select 1 from public.opportunities where id = p_opportunity) then
-    raise exception 'Prilika nije pronađena.';
-  end if;
-  insert into public.projects (title, goal, deadline, spots, icon, leader_id, opportunity_id)
-  values (btrim(p_title), btrim(p_goal), p_deadline, coalesce(p_spots, 2), coalesce(nullif(p_icon, ''), '✨'), v_me.id, p_opportunity)
-  returning id into v_id;
-  insert into public.project_tags (project_id, tag)
-  select distinct v_id, t from unnest(p_tags) t where exists (select 1 from public.tags where slug = t);
-  return v_id;
+
+  select v.* into i from public.invites v where v.project_id = pr.id and v.profile_id = p_profile;
+  if i.status <> 'pending' then return null; end if;
+  return private.invite_json(i);
 end $$;
 
--- Čuvanje oznaka sada javlja i prilike koje odgovaraju učeniku.
-create or replace function public.save_tags(p_tags jsonb)
-returns void language plpgsql security definer set search_path = '' as $$
-declare v_me public.profiles := private.me();
+-- Za novi (odobren) projekat: poziva učesnike sa tom oznakom koji nemaju poziv na čekanju.
+-- Skrivena prednost: prvo oni koji nisu ni u jednom timu.
+create or replace function private.fan_out(p_project uuid, p_limit int default 20)
+returns int language plpgsql security definer set search_path = '' as $$
+declare n int;
 begin
-  if jsonb_typeof(p_tags) <> 'array' or jsonb_array_length(p_tags) = 0 then
-    raise exception 'Izaberi bar jednu oznaku.';
-  end if;
-  if jsonb_array_length(p_tags) > 17 then raise exception 'Previše oznaka.'; end if;
-  delete from public.profile_tags where profile_id = v_me.id;
-  insert into public.profile_tags (profile_id, tag, kind)
-  select distinct on (e->>'tag') v_me.id, e->>'tag', (e->>'kind')::public.tag_kind
-  from jsonb_array_elements(p_tags) e
-  where exists (select 1 from public.tags t where t.slug = e->>'tag');
-  update public.profiles set onboarded = true, tags_version = tags_version + 1 where id = v_me.id;
-  if v_me.role = 'student' then perform private.notify_opportunities(v_me.id); end if;
+  insert into public.invites (project_id, profile_id, reason_tag)
+  select pr.id, p.id, pr.tag
+  from public.projects pr
+  join public.profile_tags t on t.tag = pr.tag
+  join public.profiles p on p.id = t.profile_id and p.role = 'student' and p.nick is not null
+  where pr.id = p_project and pr.status = 'open'
+    and not exists (select 1 from public.memberships m where m.project_id = pr.id and m.profile_id = p.id)
+    and not exists (select 1 from public.invites v where v.profile_id = p.id and (v.project_id = pr.id or v.status = 'pending'))
+  order by exists (select 1 from public.memberships m where m.profile_id = p.id), p.created_at
+  limit p_limit
+  on conflict (project_id, profile_id) do nothing;
+  get diagnostics n = row_count;
+  return n;
 end $$;
 
-create or replace function public.get_notifications()
-returns jsonb language sql stable security definer set search_path = '' as $$
-  select coalesce(jsonb_agg(jsonb_build_object('id', id, 'kind', kind, 'project_id', project_id,
-           'opportunity_id', opportunity_id, 'body', body, 'read', read_at is not null,
-           'created_at', created_at) order by created_at desc), '[]'::jsonb)
-  from (select * from public.notifications where profile_id = private.my_profile_id()
-        order by created_at desc limit 30) n
-$$;
+-- ── Seed ─────────────────────────────────────────────────────
 
--- Reset vraća i prilike na seed.
-create or replace function public.reset_demo()
-returns void language plpgsql security definer set search_path = '' as $$
-begin
-  perform private.require_staff();
-  delete from auth.users u
-  where exists (select 1 from public.profiles p where p.user_id = u.id and p.role = 'student')
-     or not exists (select 1 from public.profiles p where p.user_id = u.id);
-  delete from public.notifications where true;
-  delete from public.help_signals where true;
-  delete from public.projects where true; -- kaskadno: oznake, članovi, pozivi, zid
-  delete from public.group_members where true;
-  delete from public.opportunity_interest where true;
-  delete from public.opportunities where true;
-  delete from public.profiles where role = 'student';
-  delete from private.first_group_events where true;
-  update public.access_codes set used_at = null where role = 'student';
-  perform private.load_seed();
-  perform private.load_seed_opportunities();
-  update public.demo_meta set reset_at = now() where id = 1;
-end $$;
-
--- Privremena prazna verzija; prava je u 0009_seed_opportunities.sql (generisano).
-create or replace function private.load_seed_opportunities()
-returns void language plpgsql security definer set search_path = '' as $$ begin end $$;
-
--- ─── Realtime ────────────────────────────────────────────────
-alter publication supabase_realtime add table public.opportunities;
-
--- ─── Prava ───────────────────────────────────────────────────
-revoke all on all functions in schema private from public, anon, authenticated;
-grant execute on function
-  private.my_profile_id(), private.is_staff(), private.is_member(uuid),
-  private.shares_group(uuid), private.has_group(uuid)
-to authenticated;
-revoke execute on function
-  public.get_opportunities(), public.get_opportunity(uuid), public.toggle_opportunity_interest(uuid),
-  public.create_opportunity(text, public.opportunity_kind, text, date, text, text, text, text[]),
-  public.create_project(text, text, date, int, text[], text, uuid),
-  public.save_tags(jsonb), public.get_notifications(), public.reset_demo()
-from public, anon;
-grant execute on function
-  public.get_opportunities(), public.get_opportunity(uuid), public.toggle_opportunity_interest(uuid),
-  public.create_opportunity(text, public.opportunity_kind, text, date, text, text, text, text[]),
-  public.create_project(text, text, date, int, text[], text, uuid),
-  public.save_tags(jsonb), public.get_notifications(), public.reset_demo()
-to authenticated;
-
-
--- >>> migrations/0009_seed_opportunities.sql
--- ═════════════════════════════════════════════════════════════
---  ConnectEd · 0009 · Seed prilika van škole (GENERISANO: npm run gen:seed)
---  Izmišljene prilike; organizatori su generički.
--- ═════════════════════════════════════════════════════════════
-
-create or replace function private.load_seed_opportunities()
-returns void language plpgsql security definer set search_path = '' as $opp$
-begin
-  insert into public.opportunities (id, title, kind, organizer, deadline, place, audience, description, posted_by_label, created_at) values
-    ('d0000000-0000-4000-8000-000000000001', 'Hakaton „Turizam sjutra“ za srednjoškolce', 'hakaton', 'Inovacioni centar za mlade', current_date + 18, 'Podgorica', 'II–IV razred, timovi od 3 do 5', 'Dva dana smišljanja digitalnih rješenja za lokalni turizam. Mentori iz IT firmi i hotela, hrana i majice obezbijeđeni. Trebaju ljudi za ideju, dizajn, jezike i prezentaciju.', 'Mentorka sekcije', now() - interval '3 days'),
-    ('d0000000-0000-4000-8000-000000000002', 'Regionalno takmičenje mladih kuvara i poslastičara', 'takmicenje', 'Udruženje kuvara primorja', current_date + 14, 'Budva', 'III i IV razred, smjer kuvar', 'Takmičenje u pripremi predjela i deserta od lokalnih namirnica. Najbolji dobijaju praksu u hotelima sa pet zvjezdica.', 'Profesor praktične nastave', now() - interval '5 days'),
-    ('d0000000-0000-4000-8000-000000000003', 'Radionica: barmenstvo i latte art', 'radionica', 'Akademija za ugostiteljstvo', current_date + 7, 'Bar, školska kuhinja', 'Svi razredi, 12 mjesta', 'Tri sata prakse: klasični mocktaili, aparat za espresso i crtanje u mlijeku. Dobijaš potvrdu o učešću.', 'Mentorka sekcije', now() - interval '2 days'),
-    ('d0000000-0000-4000-8000-000000000004', 'Predavanje: kako do prvog posla u turizmu', 'predavanje', 'Klub mladih turističkih radnika', current_date + 5, 'Online', 'Svi razredi', 'Mladi recepcioneri, vodiči i menadžeri pričaju kako su počeli, šta poslodavci traže i kako se piše prva radna biografija.', 'Školski pedagog', now() - interval '1 days'),
-    ('d0000000-0000-4000-8000-000000000005', 'Foto i video konkurs „Moj grad u kadru“', 'konkurs', 'Opštinski centar za kulturu', current_date + 25, 'Online prijava', 'Učenici srednjih škola', 'Pošalji do tri fotografije ili video do 60 sekundi o mjestu u kojem živiš. Najbolji radovi idu na izložbu u gradskoj galeriji.', 'Učenički parlament', now() - interval '4 days'),
-    ('d0000000-0000-4000-8000-000000000006', 'Volonteri za ljetnji festival na Primorju', 'volontiranje', 'Festivalski odbor', current_date + 30, 'Bar', 'Od 16 godina', 'Doček gostiju, info-pult na engleskom i pomoć bendovima iza bine. Volonterska potvrda i festivalska majica.', 'Učenički parlament', now() - interval '6 days'),
-    ('d0000000-0000-4000-8000-000000000007', 'Konkurs za najbolju biznis ideju mladih', 'konkurs', 'Fond za podršku mladim preduzetnicima', current_date + 40, 'Online prijava', 'Učenici i timovi do 4 člana', 'Opiši ideju na dvije strane: problem, rješenje, kupci i troškovi. Finalisti dobijaju mentorstvo i novčanu nagradu za početak.', 'Profesorka ekonomije', now() - interval '8 days'),
-    ('d0000000-0000-4000-8000-000000000008', 'Radionica: snimanje i montaža telefonom', 'radionica', 'Medijski centar za mlade', current_date + 12, 'Podgorica', 'Svi razredi', 'Kako snimiti dobar kadar telefonom, popraviti svjetlo i montirati kratak video za društvene mreže. Ponesi telefon.', 'Mentorka sekcije', now() - interval '2 days')
-  on conflict (id) do nothing;
-  insert into public.opportunity_tags (opportunity_id, tag)
-  select v.o::uuid, v.t from (values
-    ('d0000000-0000-4000-8000-000000000001', 'turizam'),
-    ('d0000000-0000-4000-8000-000000000001', 'preduzetnistvo'),
-    ('d0000000-0000-4000-8000-000000000001', 'crtanje'),
-    ('d0000000-0000-4000-8000-000000000002', 'kuvanje'),
-    ('d0000000-0000-4000-8000-000000000002', 'poslasticarstvo'),
-    ('d0000000-0000-4000-8000-000000000003', 'barmen'),
-    ('d0000000-0000-4000-8000-000000000004', 'turizam'),
-    ('d0000000-0000-4000-8000-000000000004', 'jezici'),
-    ('d0000000-0000-4000-8000-000000000004', 'preduzetnistvo'),
-    ('d0000000-0000-4000-8000-000000000005', 'video'),
-    ('d0000000-0000-4000-8000-000000000005', 'crtanje'),
-    ('d0000000-0000-4000-8000-000000000006', 'jezici'),
-    ('d0000000-0000-4000-8000-000000000006', 'turizam'),
-    ('d0000000-0000-4000-8000-000000000006', 'muzika'),
-    ('d0000000-0000-4000-8000-000000000007', 'preduzetnistvo'),
-    ('d0000000-0000-4000-8000-000000000008', 'video')
-  ) as v(o, t) where exists (select 1 from public.tags where slug = v.t)
-  on conflict do nothing;
-end $opp$;
-
-revoke all on function private.load_seed_opportunities() from public, anon, authenticated;
-
--- Postojeća baza (oznake već postoje): odmah učitaj prilike. Prazna baza: učitava ih seed.sql.
-do $$ begin if exists (select 1 from public.tags) then perform private.load_seed_opportunities(); end if; end $$;
-
-
--- >>> migrations/0010_simplify.sql
--- ═════════════════════════════════════════════════════════════
---  ConnectEd · 0010 · Pojednostavljenje
---  10 oznaka umjesto 17 („Foto i video“, „Muzika i ples“; bez podcasta,
---  pisanja, programiranja, gaminga i bubnjeva) i manje seed projekata.
---  Na postojećoj bazi VRAĆA DEMO NA POČETAK sa novim podacima
---  (kao „Resetuj demo“: nalozi učenika se brišu, mentorski ostaju).
---  Bezbjedno je pokrenuti više puta.
--- ═════════════════════════════════════════════════════════════
-
--- Novi seed (isti kao u supabase/seed.sql i 0009, generisano)
 create or replace function private.load_seed()
-returns void language plpgsql security definer set search_path = '' as $seed$
+returns void language plpgsql security definer set search_path = '' as $$
 begin
-  insert into public.classes (id, razred, smjer, label) values
-    ('1-1', 1, 'Ekonomski tehničar', 'I-1'),
-    ('1-2', 1, 'Turistički tehničar', 'I-2'),
-    ('1-3', 1, 'Kuvar', 'I-3'),
-    ('1-4', 1, 'Konobar', 'I-4'),
-    ('2-1', 2, 'Ekonomski tehničar', 'II-1'),
-    ('2-2', 2, 'Turistički tehničar', 'II-2'),
-    ('2-3', 2, 'Kuvar', 'II-3'),
-    ('2-4', 2, 'Konobar', 'II-4'),
-    ('3-1', 3, 'Ekonomski tehničar', 'III-1'),
-    ('3-2', 3, 'Turistički tehničar', 'III-2'),
-    ('3-3', 3, 'Kuvar', 'III-3'),
-    ('3-4', 3, 'Konobar', 'III-4'),
-    ('4-1', 4, 'Ekonomski tehničar', 'IV-1'),
-    ('4-2', 4, 'Turistički tehničar', 'IV-2'),
-    ('4-3', 4, 'Kuvar', 'IV-3'),
-    ('4-4', 4, 'Konobar', 'IV-4')
-  on conflict (id) do update set razred = excluded.razred, smjer = excluded.smjer, label = excluded.label;
-
   insert into public.tags (slug, label, icon, sort) values
-    ('kuvanje', 'Kuvanje', '🍳', 0),
-    ('poslasticarstvo', 'Poslastičarstvo', '🧁', 1),
-    ('barmen', 'Barmen i posluženje', '🍹', 2),
-    ('turizam', 'Turizam i ture', '🧭', 3),
-    ('jezici', 'Strani jezici', '🗣️', 4),
-    ('preduzetnistvo', 'Preduzetništvo', '💼', 5),
-    ('crtanje', 'Crtanje i dizajn', '🎨', 6),
-    ('video', 'Foto i video', '📸', 7),
-    ('muzika', 'Muzika i ples', '🎵', 8),
-    ('sport', 'Sport', '⚽', 9)
+    ('robotika', 'Robotika', '🤖', 1),
+    ('programiranje', 'Programiranje', '💻', 2),
+    ('dizajn', 'Dizajn i crtanje', '🎨', 3),
+    ('video', 'Foto i video', '📸', 4),
+    ('nauka', 'Nauka i eksperimenti', '🔬', 5),
+    ('ekologija', 'Ekologija', '🌱', 6),
+    ('muzika', 'Muzika', '🎵', 7),
+    ('ideje', 'Ideje i preduzetništvo', '💡', 8)
   on conflict (slug) do update set label = excluded.label, icon = excluded.icon, sort = excluded.sort;
 
-  insert into public.access_codes (code, role, class_id) values
-    ('1101', 'student', '1-1'),
-    ('1102', 'student', '1-1'),
-    ('1103', 'student', '1-1'),
-    ('1104', 'student', '1-1'),
-    ('1105', 'student', '1-1'),
-    ('1106', 'student', '1-1'),
-    ('1107', 'student', '1-1'),
-    ('1108', 'student', '1-1'),
-    ('1109', 'student', '1-1'),
-    ('1110', 'student', '1-1'),
-    ('1201', 'student', '1-2'),
-    ('1202', 'student', '1-2'),
-    ('1203', 'student', '1-2'),
-    ('1204', 'student', '1-2'),
-    ('1205', 'student', '1-2'),
-    ('1206', 'student', '1-2'),
-    ('1207', 'student', '1-2'),
-    ('1208', 'student', '1-2'),
-    ('1209', 'student', '1-2'),
-    ('1210', 'student', '1-2'),
-    ('1301', 'student', '1-3'),
-    ('1302', 'student', '1-3'),
-    ('1303', 'student', '1-3'),
-    ('1304', 'student', '1-3'),
-    ('1305', 'student', '1-3'),
-    ('1306', 'student', '1-3'),
-    ('1307', 'student', '1-3'),
-    ('1308', 'student', '1-3'),
-    ('1309', 'student', '1-3'),
-    ('1310', 'student', '1-3'),
-    ('1401', 'student', '1-4'),
-    ('1402', 'student', '1-4'),
-    ('1403', 'student', '1-4'),
-    ('1404', 'student', '1-4'),
-    ('1405', 'student', '1-4'),
-    ('1406', 'student', '1-4'),
-    ('1407', 'student', '1-4'),
-    ('1408', 'student', '1-4'),
-    ('1409', 'student', '1-4'),
-    ('1410', 'student', '1-4'),
-    ('2101', 'student', '2-1'),
-    ('2102', 'student', '2-1'),
-    ('2103', 'student', '2-1'),
-    ('2104', 'student', '2-1'),
-    ('2105', 'student', '2-1'),
-    ('2106', 'student', '2-1'),
-    ('2107', 'student', '2-1'),
-    ('2108', 'student', '2-1'),
-    ('2109', 'student', '2-1'),
-    ('2110', 'student', '2-1'),
-    ('2201', 'student', '2-2'),
-    ('2202', 'student', '2-2'),
-    ('2203', 'student', '2-2'),
-    ('2204', 'student', '2-2'),
-    ('2205', 'student', '2-2'),
-    ('2206', 'student', '2-2'),
-    ('2207', 'student', '2-2'),
-    ('2208', 'student', '2-2'),
-    ('2209', 'student', '2-2'),
-    ('2210', 'student', '2-2'),
-    ('2301', 'student', '2-3'),
-    ('2302', 'student', '2-3'),
-    ('2303', 'student', '2-3'),
-    ('2304', 'student', '2-3'),
-    ('2305', 'student', '2-3'),
-    ('2306', 'student', '2-3'),
-    ('2307', 'student', '2-3'),
-    ('2308', 'student', '2-3'),
-    ('2309', 'student', '2-3'),
-    ('2310', 'student', '2-3'),
-    ('2401', 'student', '2-4'),
-    ('2402', 'student', '2-4'),
-    ('2403', 'student', '2-4'),
-    ('2404', 'student', '2-4'),
-    ('2405', 'student', '2-4'),
-    ('2406', 'student', '2-4'),
-    ('2407', 'student', '2-4'),
-    ('2408', 'student', '2-4'),
-    ('2409', 'student', '2-4'),
-    ('2410', 'student', '2-4'),
-    ('3101', 'student', '3-1'),
-    ('3102', 'student', '3-1'),
-    ('3103', 'student', '3-1'),
-    ('3104', 'student', '3-1'),
-    ('3105', 'student', '3-1'),
-    ('3106', 'student', '3-1'),
-    ('3107', 'student', '3-1'),
-    ('3108', 'student', '3-1'),
-    ('3109', 'student', '3-1'),
-    ('3110', 'student', '3-1'),
-    ('3201', 'student', '3-2'),
-    ('3202', 'student', '3-2'),
-    ('3203', 'student', '3-2'),
-    ('3204', 'student', '3-2'),
-    ('3205', 'student', '3-2'),
-    ('3206', 'student', '3-2'),
-    ('3207', 'student', '3-2'),
-    ('3208', 'student', '3-2'),
-    ('3209', 'student', '3-2'),
-    ('3210', 'student', '3-2'),
-    ('3301', 'student', '3-3'),
-    ('3302', 'student', '3-3'),
-    ('3303', 'student', '3-3'),
-    ('3304', 'student', '3-3'),
-    ('3305', 'student', '3-3'),
-    ('3306', 'student', '3-3'),
-    ('3307', 'student', '3-3'),
-    ('3308', 'student', '3-3'),
-    ('3309', 'student', '3-3'),
-    ('3310', 'student', '3-3'),
-    ('3401', 'student', '3-4'),
-    ('3402', 'student', '3-4'),
-    ('3403', 'student', '3-4'),
-    ('3404', 'student', '3-4'),
-    ('3405', 'student', '3-4'),
-    ('3406', 'student', '3-4'),
-    ('3407', 'student', '3-4'),
-    ('3408', 'student', '3-4'),
-    ('3409', 'student', '3-4'),
-    ('3410', 'student', '3-4'),
-    ('4101', 'student', '4-1'),
-    ('4102', 'student', '4-1'),
-    ('4103', 'student', '4-1'),
-    ('4104', 'student', '4-1'),
-    ('4105', 'student', '4-1'),
-    ('4106', 'student', '4-1'),
-    ('4107', 'student', '4-1'),
-    ('4108', 'student', '4-1'),
-    ('4109', 'student', '4-1'),
-    ('4110', 'student', '4-1'),
-    ('4201', 'student', '4-2'),
-    ('4202', 'student', '4-2'),
-    ('4203', 'student', '4-2'),
-    ('4204', 'student', '4-2'),
-    ('4205', 'student', '4-2'),
-    ('4206', 'student', '4-2'),
-    ('4207', 'student', '4-2'),
-    ('4208', 'student', '4-2'),
-    ('4209', 'student', '4-2'),
-    ('4210', 'student', '4-2'),
-    ('4301', 'student', '4-3'),
-    ('4302', 'student', '4-3'),
-    ('4303', 'student', '4-3'),
-    ('4304', 'student', '4-3'),
-    ('4305', 'student', '4-3'),
-    ('4306', 'student', '4-3'),
-    ('4307', 'student', '4-3'),
-    ('4308', 'student', '4-3'),
-    ('4309', 'student', '4-3'),
-    ('4310', 'student', '4-3'),
-    ('4401', 'student', '4-4'),
-    ('4402', 'student', '4-4'),
-    ('4403', 'student', '4-4'),
-    ('4404', 'student', '4-4'),
-    ('4405', 'student', '4-4'),
-    ('4406', 'student', '4-4'),
-    ('4407', 'student', '4-4'),
-    ('4408', 'student', '4-4'),
-    ('4409', 'student', '4-4'),
-    ('4410', 'student', '4-4'),
-    ('9001', 'mentor', null),
-    ('9002', 'mentor', null),
-    ('9003', 'mentor', null),
-    ('9004', 'mentor', null),
-    ('9005', 'mentor', null),
-    ('8001', 'pedagog', null),
-    ('8002', 'pedagog', null)
-  on conflict (code) do nothing;
-
-  insert into public.profiles (id, nick, nick_norm, role, class_id, onboarded, is_seed, created_at) values
-    ('a0000000-0000-4000-8000-000000000001', 'luna.k', private.normalize_nick('luna.k'), 'student', '1-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000002', 'marko_99', private.normalize_nick('marko_99'), 'student', '1-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000003', 'tea.art', private.normalize_nick('tea.art'), 'student', '1-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000004', 'nikola7', private.normalize_nick('nikola7'), 'student', '1-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000005', 'sara.slatko', private.normalize_nick('sara.slatko'), 'student', '1-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000006', 'vuk', private.normalize_nick('vuk'), 'student', '1-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000007', 'mia_mix', private.normalize_nick('mia_mix'), 'student', '1-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000008', 'dejo', private.normalize_nick('dejo'), 'student', '1-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000009', 'ana.vodi', private.normalize_nick('ana.vodi'), 'student', '2-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000010', 'bojan.b', private.normalize_nick('bojan.b'), 'student', '2-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000011', 'lena', private.normalize_nick('lena'), 'student', '2-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000012', 'stefan.ritam', private.normalize_nick('stefan.ritam'), 'student', '2-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000013', 'jana_torte', private.normalize_nick('jana_torte'), 'student', '2-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000014', 'petar.chef', private.normalize_nick('petar.chef'), 'student', '2-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000015', 'iva.shake', private.normalize_nick('iva.shake'), 'student', '2-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000016', 'milos', private.normalize_nick('milos'), 'student', '2-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000017', 'kaća', private.normalize_nick('kaća'), 'student', '3-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000018', 'dusan.foto', private.normalize_nick('dusan.foto'), 'student', '3-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000019', 'eli.ples', private.normalize_nick('eli.ples'), 'student', '3-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000020', 'andrej.gg', private.normalize_nick('andrej.gg'), 'student', '3-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000021', 'maja.mural', private.normalize_nick('maja.mural'), 'student', '3-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000022', 'ognjen', private.normalize_nick('ognjen'), 'student', '3-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000023', 'tamara', private.normalize_nick('tamara'), 'student', '3-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000024', 'luka.bas', private.normalize_nick('luka.bas'), 'student', '3-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000025', 'mina.pise', private.normalize_nick('mina.pise'), 'student', '4-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000026', 'filip.cut', private.normalize_nick('filip.cut'), 'student', '4-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000027', 'nina', private.normalize_nick('nina'), 'student', '4-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000028', 'relja', private.normalize_nick('relja'), 'student', '4-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000029', 'zara', private.normalize_nick('zara'), 'student', '4-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000030', 'bane.drums', private.normalize_nick('bane.drums'), 'student', '4-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000031', 'ena.crta', private.normalize_nick('ena.crta'), 'student', '1-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000032', 'igor', private.normalize_nick('igor'), 'student', '1-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000033', 'sofija.en', private.normalize_nick('sofija.en'), 'student', '1-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000034', 'dario', private.normalize_nick('dario'), 'student', '2-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000035', 'kiki', private.normalize_nick('kiki'), 'student', '2-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000036', 'lazar.beat', private.normalize_nick('lazar.beat'), 'student', '3-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000037', 'hana', private.normalize_nick('hana'), 'student', '3-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000038', 'teo', private.normalize_nick('teo'), 'student', '4-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000039', 'mila.m', private.normalize_nick('mila.m'), 'student', '4-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000040', 'pavle', private.normalize_nick('pavle'), 'student', '4-4', true, true, now() - interval '70 days')
+  insert into public.projects (id, title, sentence, deadline, tag, join_text, status, is_fallback, is_seed, approved_at) values
+    ('a0000000-0000-4000-8000-000000000001', 'Robot koji sortira otpad', 'Pravimo malog robota koji prepoznaje plastiku i papir.', current_date + 30, 'robotika', 'robotičkom timu', 'open', false, true, now()),
+    ('a0000000-0000-4000-8000-000000000002', 'Aplikacija za STEM klub', 'Pravimo aplikaciju sa rasporedom radionica i prijavama.', current_date + 35, 'programiranje', 'timu koji pravi aplikaciju', 'open', false, true, now()),
+    ('a0000000-0000-4000-8000-000000000003', 'Plakat i logo za STEM sajam', 'Smišljamo izgled sajma: plakat, logo i bedževe.', current_date + 20, 'dizajn', 'dizajnerskom timu', 'open', false, true, now()),
+    ('a0000000-0000-4000-8000-000000000004', 'STEM klub u 60 sekundi', 'Snimamo kratak video o tome šta radimo u klubu.', current_date + 21, 'video', 'video timu', 'open', false, true, now()),
+    ('a0000000-0000-4000-8000-000000000005', 'Eksperimenti za Dan nauke', 'Pripremamo pet eksperimenata koje publika može probati.', current_date + 28, 'nauka', 'naučnom timu', 'open', false, true, now()),
+    ('a0000000-0000-4000-8000-000000000006', 'Senzor kvaliteta vazduha', 'Mjerimo vazduh u školi i pokazujemo podatke na ekranu.', current_date + 40, 'ekologija', 'eko timu', 'open', false, true, now()),
+    ('a0000000-0000-4000-8000-000000000007', 'Muzika za školsku igricu', 'Pravimo zvukove i kratku melodiju za igricu kluba.', current_date + 30, 'muzika', 'muzičkom timu', 'open', false, true, now()),
+    ('a0000000-0000-4000-8000-000000000008', 'Ideja koja rješava problem', 'Biramo jedan školski problem i smišljamo rješenje za njega.', current_date + 25, 'ideje', 'timu za ideje', 'open', false, true, now()),
+    ('a0000000-0000-4000-8000-0000000000ff', 'STEM klub traži ljude sa idejama', 'Dođi na prvi sastanak i reci šta bi volio/voljela da napravimo.', current_date + 14, null, 'STEM klubu', 'open', true, true, now())
   on conflict (id) do nothing;
+end $$;
 
-  insert into public.profile_tags (profile_id, tag, kind) values
-    ('a0000000-0000-4000-8000-000000000001', 'crtanje', 'znam'),
-    ('a0000000-0000-4000-8000-000000000001', 'video', 'volim'),
-    ('a0000000-0000-4000-8000-000000000002', 'sport', 'znam'),
-    ('a0000000-0000-4000-8000-000000000003', 'crtanje', 'znam'),
-    ('a0000000-0000-4000-8000-000000000003', 'muzika', 'volim'),
-    ('a0000000-0000-4000-8000-000000000004', 'turizam', 'volim'),
-    ('a0000000-0000-4000-8000-000000000004', 'jezici', 'znam'),
-    ('a0000000-0000-4000-8000-000000000005', 'poslasticarstvo', 'znam'),
-    ('a0000000-0000-4000-8000-000000000005', 'kuvanje', 'volim'),
-    ('a0000000-0000-4000-8000-000000000006', 'kuvanje', 'znam'),
-    ('a0000000-0000-4000-8000-000000000006', 'sport', 'volim'),
-    ('a0000000-0000-4000-8000-000000000007', 'barmen', 'znam'),
-    ('a0000000-0000-4000-8000-000000000007', 'muzika', 'volim'),
-    ('a0000000-0000-4000-8000-000000000008', 'barmen', 'volim'),
-    ('a0000000-0000-4000-8000-000000000008', 'sport', 'znam'),
-    ('a0000000-0000-4000-8000-000000000009', 'turizam', 'znam'),
-    ('a0000000-0000-4000-8000-000000000009', 'jezici', 'znam'),
-    ('a0000000-0000-4000-8000-000000000009', 'video', 'volim'),
-    ('a0000000-0000-4000-8000-000000000010', 'preduzetnistvo', 'znam'),
-    ('a0000000-0000-4000-8000-000000000011', 'jezici', 'znam'),
-    ('a0000000-0000-4000-8000-000000000011', 'video', 'volim'),
-    ('a0000000-0000-4000-8000-000000000012', 'muzika', 'znam'),
-    ('a0000000-0000-4000-8000-000000000013', 'poslasticarstvo', 'znam'),
-    ('a0000000-0000-4000-8000-000000000013', 'crtanje', 'volim'),
-    ('a0000000-0000-4000-8000-000000000014', 'kuvanje', 'znam'),
-    ('a0000000-0000-4000-8000-000000000014', 'preduzetnistvo', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000015', 'barmen', 'znam'),
-    ('a0000000-0000-4000-8000-000000000015', 'muzika', 'volim'),
-    ('a0000000-0000-4000-8000-000000000016', 'sport', 'znam'),
-    ('a0000000-0000-4000-8000-000000000016', 'muzika', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000017', 'preduzetnistvo', 'znam'),
-    ('a0000000-0000-4000-8000-000000000017', 'jezici', 'volim'),
-    ('a0000000-0000-4000-8000-000000000018', 'video', 'znam'),
-    ('a0000000-0000-4000-8000-000000000018', 'turizam', 'volim'),
-    ('a0000000-0000-4000-8000-000000000019', 'muzika', 'znam'),
-    ('a0000000-0000-4000-8000-000000000020', 'sport', 'znam'),
-    ('a0000000-0000-4000-8000-000000000020', 'crtanje', 'volim'),
-    ('a0000000-0000-4000-8000-000000000021', 'crtanje', 'znam'),
-    ('a0000000-0000-4000-8000-000000000021', 'poslasticarstvo', 'volim'),
-    ('a0000000-0000-4000-8000-000000000022', 'kuvanje', 'volim'),
-    ('a0000000-0000-4000-8000-000000000022', 'muzika', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000023', 'barmen', 'znam'),
-    ('a0000000-0000-4000-8000-000000000023', 'jezici', 'volim'),
-    ('a0000000-0000-4000-8000-000000000024', 'muzika', 'znam'),
-    ('a0000000-0000-4000-8000-000000000024', 'sport', 'volim'),
-    ('a0000000-0000-4000-8000-000000000025', 'jezici', 'znam'),
-    ('a0000000-0000-4000-8000-000000000025', 'preduzetnistvo', 'volim'),
-    ('a0000000-0000-4000-8000-000000000026', 'video', 'znam'),
-    ('a0000000-0000-4000-8000-000000000027', 'turizam', 'znam'),
-    ('a0000000-0000-4000-8000-000000000027', 'muzika', 'volim'),
-    ('a0000000-0000-4000-8000-000000000028', 'sport', 'znam'),
-    ('a0000000-0000-4000-8000-000000000028', 'turizam', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000029', 'poslasticarstvo', 'volim'),
-    ('a0000000-0000-4000-8000-000000000029', 'kuvanje', 'znam'),
-    ('a0000000-0000-4000-8000-000000000030', 'muzika', 'znam'),
-    ('a0000000-0000-4000-8000-000000000030', 'preduzetnistvo', 'volim'),
-    ('a0000000-0000-4000-8000-000000000031', 'crtanje', 'volim'),
-    ('a0000000-0000-4000-8000-000000000032', 'kuvanje', 'volim'),
-    ('a0000000-0000-4000-8000-000000000032', 'sport', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000033', 'jezici', 'znam'),
-    ('a0000000-0000-4000-8000-000000000033', 'turizam', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000034', 'barmen', 'volim'),
-    ('a0000000-0000-4000-8000-000000000034', 'sport', 'volim'),
-    ('a0000000-0000-4000-8000-000000000035', 'poslasticarstvo', 'volim'),
-    ('a0000000-0000-4000-8000-000000000035', 'video', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000036', 'muzika', 'volim'),
-    ('a0000000-0000-4000-8000-000000000037', 'muzika', 'volim'),
-    ('a0000000-0000-4000-8000-000000000037', 'barmen', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000038', 'preduzetnistvo', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000038', 'sport', 'volim'),
-    ('a0000000-0000-4000-8000-000000000039', 'crtanje', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000039', 'jezici', 'volim'),
-    ('a0000000-0000-4000-8000-000000000040', 'sport', 'volim'),
-    ('a0000000-0000-4000-8000-000000000040', 'kuvanje', 'ucim')
-  on conflict do nothing;
-
-  insert into public.projects (id, title, goal, icon, spots, status, leader_id, created_at, approved_at, completed_at, deadline, result_text) values
-    ('b0000000-0000-4000-8000-000000000001', 'Ketering za školsku proslavu traži poslastičara', 'Slatki sto za 150 gostiju na proslavi Dana škole.', '🧁', 3, 'open', 'a0000000-0000-4000-8000-000000000014', now() - interval '9 days', now() - interval '8 days', null, current_date + 18, null),
-    ('b0000000-0000-4000-8000-000000000002', 'Tura kroz Stari Bar traži vodiča na engleskom', 'Šetnja za goste iz partnerske škole iz Italije.', '🧭', 3, 'open', 'a0000000-0000-4000-8000-000000000009', now() - interval '8 days', now() - interval '7 days', null, current_date + 21, null),
-    ('b0000000-0000-4000-8000-000000000003', 'Školski mural traži nekoga ko crta', 'Mural na zidu kod sale: „Naša škola, naš sto“.', '🎨', 3, 'open', 'a0000000-0000-4000-8000-000000000021', now() - interval '14 days', now() - interval '13 days', null, current_date + 14, null),
-    ('b0000000-0000-4000-8000-000000000005', 'Bezalkoholni kokteli za Dan škole traže barmena', 'Meni od pet mocktaila i posluženje za goste.', '🍹', 2, 'open', 'a0000000-0000-4000-8000-000000000023', now() - interval '5 days', now() - interval '4 days', null, current_date + 18, null),
-    ('b0000000-0000-4000-8000-000000000006', 'Turnir u odbojci traži organizatore', 'Međuodjeljenski turnir: raspored, sudije, medalje.', '🏐', 4, 'open', 'a0000000-0000-4000-8000-000000000028', now() - interval '10 days', now() - interval '9 days', null, current_date + 25, null),
-    ('b0000000-0000-4000-8000-000000000007', 'Mini sajam učeničke zadruge traži prodavce', 'Štand sa domaćim proizvodima i cjenovnikom na dva jezika.', '💼', 3, 'open', 'a0000000-0000-4000-8000-000000000017', now() - interval '7 days', now() - interval '6 days', null, current_date + 20, null),
-    ('b0000000-0000-4000-8000-000000000009', 'Muzički program za maturu traži izvođače', 'Ples i dvije pjesme za maturski program.', '💃', 4, 'open', 'a0000000-0000-4000-8000-000000000019', now() - interval '3 days', now() - interval '2 days', null, current_date + 40, null),
-    ('b0000000-0000-4000-8000-000000000012', 'Kuvar za jedan dan: radionica za osnovce', 'Radionica pravljenja palačinki za 30 osnovaca.', '👩‍🍳', 3, 'done', 'a0000000-0000-4000-8000-000000000029', now() - interval '35 days', now() - interval '34 days', now() - interval '10 days', current_date + -9, '30 osnovaca, 200 palačinki i nijedna izgorjela. Recepte smo podijelili roditeljima.'),
-    ('b0000000-0000-4000-8000-000000000014', 'Novogodišnji štand učeničke zadruge', 'Prodaja kolača i čestitki za humanitarnu akciju.', '🎄', 3, 'done', 'a0000000-0000-4000-8000-000000000010', now() - interval '60 days', now() - interval '59 days', now() - interval '20 days', current_date + -19, 'Prikupili smo 640 € za opremu dječjeg odjeljenja bolnice.'),
-    ('b0000000-0000-4000-8000-000000000015', 'Video vodič kroz Stari grad', 'Kratki video na tri jezika za goste škole.', '🎬', 3, 'done', 'a0000000-0000-4000-8000-000000000026', now() - interval '40 days', now() - interval '39 days', now() - interval '6 days', current_date + -5, 'Snimili smo vodič od 4 minuta na crnogorskom, engleskom i italijanskom. Pušta se na Danu otvorenih vrata.')
-  on conflict (id) do nothing;
-
-  insert into public.project_tags (project_id, tag) values
-    ('b0000000-0000-4000-8000-000000000001', 'poslasticarstvo'),
-    ('b0000000-0000-4000-8000-000000000001', 'kuvanje'),
-    ('b0000000-0000-4000-8000-000000000002', 'turizam'),
-    ('b0000000-0000-4000-8000-000000000002', 'jezici'),
-    ('b0000000-0000-4000-8000-000000000003', 'crtanje'),
-    ('b0000000-0000-4000-8000-000000000005', 'barmen'),
-    ('b0000000-0000-4000-8000-000000000006', 'sport'),
-    ('b0000000-0000-4000-8000-000000000006', 'preduzetnistvo'),
-    ('b0000000-0000-4000-8000-000000000007', 'preduzetnistvo'),
-    ('b0000000-0000-4000-8000-000000000007', 'jezici'),
-    ('b0000000-0000-4000-8000-000000000009', 'muzika'),
-    ('b0000000-0000-4000-8000-000000000012', 'kuvanje'),
-    ('b0000000-0000-4000-8000-000000000012', 'poslasticarstvo'),
-    ('b0000000-0000-4000-8000-000000000014', 'preduzetnistvo'),
-    ('b0000000-0000-4000-8000-000000000014', 'poslasticarstvo'),
-    ('b0000000-0000-4000-8000-000000000014', 'crtanje'),
-    ('b0000000-0000-4000-8000-000000000015', 'video'),
-    ('b0000000-0000-4000-8000-000000000015', 'turizam'),
-    ('b0000000-0000-4000-8000-000000000015', 'jezici')
-  on conflict do nothing;
-
-  insert into public.group_members (project_id, profile_id, joined_at) values
-    ('b0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000014', now() - interval '8 days'),
-    ('b0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000009', now() - interval '7 days'),
-    ('b0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000021', now() - interval '13 days'),
-    ('b0000000-0000-4000-8000-000000000005', 'a0000000-0000-4000-8000-000000000023', now() - interval '4 days'),
-    ('b0000000-0000-4000-8000-000000000006', 'a0000000-0000-4000-8000-000000000028', now() - interval '9 days'),
-    ('b0000000-0000-4000-8000-000000000007', 'a0000000-0000-4000-8000-000000000017', now() - interval '6 days'),
-    ('b0000000-0000-4000-8000-000000000009', 'a0000000-0000-4000-8000-000000000019', now() - interval '2 days'),
-    ('b0000000-0000-4000-8000-000000000012', 'a0000000-0000-4000-8000-000000000029', now() - interval '34 days'),
-    ('b0000000-0000-4000-8000-000000000014', 'a0000000-0000-4000-8000-000000000010', now() - interval '59 days'),
-    ('b0000000-0000-4000-8000-000000000015', 'a0000000-0000-4000-8000-000000000026', now() - interval '39 days'),
-    ('b0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000005', now() - interval '7 days'),
-    ('b0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000013', now() - interval '7 days'),
-    ('b0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000004', now() - interval '6 days'),
-    ('b0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000027', now() - interval '6 days'),
-    ('b0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000003', now() - interval '12 days'),
-    ('b0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', now() - interval '12 days'),
-    ('b0000000-0000-4000-8000-000000000005', 'a0000000-0000-4000-8000-000000000007', now() - interval '3 days'),
-    ('b0000000-0000-4000-8000-000000000006', 'a0000000-0000-4000-8000-000000000002', now() - interval '8 days'),
-    ('b0000000-0000-4000-8000-000000000006', 'a0000000-0000-4000-8000-000000000016', now() - interval '8 days'),
-    ('b0000000-0000-4000-8000-000000000006', 'a0000000-0000-4000-8000-000000000020', now() - interval '8 days'),
-    ('b0000000-0000-4000-8000-000000000007', 'a0000000-0000-4000-8000-000000000008', now() - interval '5 days'),
-    ('b0000000-0000-4000-8000-000000000007', 'a0000000-0000-4000-8000-000000000025', now() - interval '5 days'),
-    ('b0000000-0000-4000-8000-000000000009', 'a0000000-0000-4000-8000-000000000015', now() - interval '1 days'),
-    ('b0000000-0000-4000-8000-000000000009', 'a0000000-0000-4000-8000-000000000024', now() - interval '1 days'),
-    ('b0000000-0000-4000-8000-000000000009', 'a0000000-0000-4000-8000-000000000012', now() - interval '1 days'),
-    ('b0000000-0000-4000-8000-000000000012', 'a0000000-0000-4000-8000-000000000006', now() - interval '33 days'),
-    ('b0000000-0000-4000-8000-000000000012', 'a0000000-0000-4000-8000-000000000022', now() - interval '33 days'),
-    ('b0000000-0000-4000-8000-000000000014', 'a0000000-0000-4000-8000-000000000013', now() - interval '58 days'),
-    ('b0000000-0000-4000-8000-000000000014', 'a0000000-0000-4000-8000-000000000017', now() - interval '58 days'),
-    ('b0000000-0000-4000-8000-000000000014', 'a0000000-0000-4000-8000-000000000030', now() - interval '58 days'),
-    ('b0000000-0000-4000-8000-000000000015', 'a0000000-0000-4000-8000-000000000018', now() - interval '38 days'),
-    ('b0000000-0000-4000-8000-000000000015', 'a0000000-0000-4000-8000-000000000011', now() - interval '38 days')
-  on conflict do nothing;
-
-  insert into public.wall_posts (project_id, author_id, kind, body, created_at) values
-    ('b0000000-0000-4000-8000-000000000003', null, 'system', 'Projekat je odobren. Srećno, tim! 🚀', now() - interval '13 days'),
-    ('b0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000021', 'post', 'Skica je odobrena! Boje stižu u petak.', now() - interval '6 days'),
-    ('b0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000003', 'post', 'Ja donosim šablone za sunce 🌞', now() - interval '2 days'),
-    ('b0000000-0000-4000-8000-000000000001', null, 'system', 'Projekat je odobren. Srećno, tim! 🚀', now() - interval '8 days'),
-    ('b0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000014', 'post', 'Probni dan u kuhinji: srijeda, 7. čas.', now() - interval '3 days'),
-    ('b0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000009', 'post', 'Ruta: Kapija → Akvadukt → Sahat-kula. Treba nam još neko za engleski!', now() - interval '4 days'),
-    ('b0000000-0000-4000-8000-000000000009', 'a0000000-0000-4000-8000-000000000019', 'post', 'Proba u fiskulturnoj sali, petak poslije škole.', now() - interval '2 days'),
-    ('b0000000-0000-4000-8000-000000000015', null, 'system', 'Projekat je završen! Rezultat je sada u feedu škole. 🎉', now() - interval '6 days')
-;
-
-  insert into private.first_group_events (profile_id, at) values
-    ('a0000000-0000-4000-8000-000000000003', now() - interval '12 days'),
-    ('a0000000-0000-4000-8000-000000000004', now() - interval '6 days'),
-    ('a0000000-0000-4000-8000-000000000008', now() - interval '5 days'),
-    ('a0000000-0000-4000-8000-000000000018', now() - interval '2 days'),
-    ('a0000000-0000-4000-8000-000000000027', now() - interval '1 days')
-;
-end $seed$;
-
-revoke all on function private.load_seed() from public, anon, authenticated;
-
-
-create or replace function private.load_seed_opportunities()
-returns void language plpgsql security definer set search_path = '' as $opp$
+-- Novi slučajni kodovi (5 znakova, bez sličnih slova i cifara: 0/O, 1/I/L, 5/S, 8/B).
+create or replace function private.gen_codes(p_n int)
+returns int language plpgsql security definer set search_path = '' as $$
+declare
+  alphabet constant text := 'ACDEFHJKMNPRTUVWXY34679';
+  made int := 0; tries int := 0; c text; n int;
 begin
-  insert into public.opportunities (id, title, kind, organizer, deadline, place, audience, description, posted_by_label, created_at) values
-    ('d0000000-0000-4000-8000-000000000001', 'Hakaton „Turizam sjutra“ za srednjoškolce', 'hakaton', 'Inovacioni centar za mlade', current_date + 18, 'Podgorica', 'II–IV razred, timovi od 3 do 5', 'Dva dana smišljanja digitalnih rješenja za lokalni turizam. Mentori iz IT firmi i hotela, hrana i majice obezbijeđeni. Trebaju ljudi za ideju, dizajn, jezike i prezentaciju.', 'Mentorka sekcije', now() - interval '3 days'),
-    ('d0000000-0000-4000-8000-000000000002', 'Regionalno takmičenje mladih kuvara i poslastičara', 'takmicenje', 'Udruženje kuvara primorja', current_date + 14, 'Budva', 'III i IV razred, smjer kuvar', 'Takmičenje u pripremi predjela i deserta od lokalnih namirnica. Najbolji dobijaju praksu u hotelima sa pet zvjezdica.', 'Profesor praktične nastave', now() - interval '5 days'),
-    ('d0000000-0000-4000-8000-000000000003', 'Radionica: barmenstvo i latte art', 'radionica', 'Akademija za ugostiteljstvo', current_date + 7, 'Bar, školska kuhinja', 'Svi razredi, 12 mjesta', 'Tri sata prakse: klasični mocktaili, aparat za espresso i crtanje u mlijeku. Dobijaš potvrdu o učešću.', 'Mentorka sekcije', now() - interval '2 days'),
-    ('d0000000-0000-4000-8000-000000000004', 'Predavanje: kako do prvog posla u turizmu', 'predavanje', 'Klub mladih turističkih radnika', current_date + 5, 'Online', 'Svi razredi', 'Mladi recepcioneri, vodiči i menadžeri pričaju kako su počeli, šta poslodavci traže i kako se piše prva radna biografija.', 'Školski pedagog', now() - interval '1 days'),
-    ('d0000000-0000-4000-8000-000000000005', 'Foto i video konkurs „Moj grad u kadru“', 'konkurs', 'Opštinski centar za kulturu', current_date + 25, 'Online prijava', 'Učenici srednjih škola', 'Pošalji do tri fotografije ili video do 60 sekundi o mjestu u kojem živiš. Najbolji radovi idu na izložbu u gradskoj galeriji.', 'Učenički parlament', now() - interval '4 days'),
-    ('d0000000-0000-4000-8000-000000000006', 'Volonteri za ljetnji festival na Primorju', 'volontiranje', 'Festivalski odbor', current_date + 30, 'Bar', 'Od 16 godina', 'Doček gostiju, info-pult na engleskom i pomoć bendovima iza bine. Volonterska potvrda i festivalska majica.', 'Učenički parlament', now() - interval '6 days'),
-    ('d0000000-0000-4000-8000-000000000007', 'Konkurs za najbolju biznis ideju mladih', 'konkurs', 'Fond za podršku mladim preduzetnicima', current_date + 40, 'Online prijava', 'Učenici i timovi do 4 člana', 'Opiši ideju na dvije strane: problem, rješenje, kupci i troškovi. Finalisti dobijaju mentorstvo i novčanu nagradu za početak.', 'Profesorka ekonomije', now() - interval '8 days'),
-    ('d0000000-0000-4000-8000-000000000008', 'Radionica: snimanje i montaža telefonom', 'radionica', 'Medijski centar za mlade', current_date + 12, 'Podgorica', 'Svi razredi', 'Kako snimiti dobar kadar telefonom, popraviti svjetlo i montirati kratak video za društvene mreže. Ponesi telefon.', 'Mentorka sekcije', now() - interval '2 days')
-  on conflict (id) do nothing;
-  insert into public.opportunity_tags (opportunity_id, tag)
-  select v.o::uuid, v.t from (values
-    ('d0000000-0000-4000-8000-000000000001', 'turizam'),
-    ('d0000000-0000-4000-8000-000000000001', 'preduzetnistvo'),
-    ('d0000000-0000-4000-8000-000000000001', 'crtanje'),
-    ('d0000000-0000-4000-8000-000000000002', 'kuvanje'),
-    ('d0000000-0000-4000-8000-000000000002', 'poslasticarstvo'),
-    ('d0000000-0000-4000-8000-000000000003', 'barmen'),
-    ('d0000000-0000-4000-8000-000000000004', 'turizam'),
-    ('d0000000-0000-4000-8000-000000000004', 'jezici'),
-    ('d0000000-0000-4000-8000-000000000004', 'preduzetnistvo'),
-    ('d0000000-0000-4000-8000-000000000005', 'video'),
-    ('d0000000-0000-4000-8000-000000000005', 'crtanje'),
-    ('d0000000-0000-4000-8000-000000000006', 'jezici'),
-    ('d0000000-0000-4000-8000-000000000006', 'turizam'),
-    ('d0000000-0000-4000-8000-000000000006', 'muzika'),
-    ('d0000000-0000-4000-8000-000000000007', 'preduzetnistvo'),
-    ('d0000000-0000-4000-8000-000000000008', 'video')
-  ) as v(o, t) where exists (select 1 from public.tags where slug = v.t)
-  on conflict do nothing;
-end $opp$;
+  while made < p_n and tries < p_n * 20 loop
+    tries := tries + 1;
+    c := '';
+    for k in 1..5 loop
+      c := c || substr(alphabet, 1 + floor(random() * length(alphabet))::int, 1);
+    end loop;
+    insert into public.demo_codes (code) values (c) on conflict do nothing;
+    get diagnostics n = row_count;
+    made := made + n;
+  end loop;
+  return made;
+end $$;
 
-revoke all on function private.load_seed_opportunities() from public, anon, authenticated;
+-- Mentorski nalog: korisnik <nik>@connected.test mora postojati u auth.users
+-- (Authentication → Users → Add user, sa „Auto Confirm User“).
+create or replace function private.make_mentor(p_nick text, p_domain text default 'connected.test')
+returns uuid language plpgsql security definer set search_path = '' as $$
+declare uid uuid; pid uuid;
+begin
+  select id into uid from auth.users where lower(email) = lower(p_nick || '@' || p_domain);
+  if uid is null then raise exception 'Nema korisnika %@% u auth.users', p_nick, p_domain; end if;
+  insert into public.profiles (user_id, nick, role) values (uid, p_nick, 'mentor')
+    on conflict (user_id) do update set role = 'mentor', nick = excluded.nick
+    returning id into pid;
+  return pid;
+end $$;
 
+-- ── RPC: učesnik ─────────────────────────────────────────────
 
-revoke all on function private.load_seed(), private.load_seed_opportunities() from public, anon, authenticated;
+-- Novi nalog bez kucanja: anonimna sesija (signInAnonymously) + jedan kod iz bazena.
+-- Atomski: zaključava jedan slobodan kod (skip locked), pa 100 telefona istovremeno ne dobija isti kod.
+create or replace function public.claim_demo_code(p_izvor text default null)
+returns json language plpgsql security definer set search_path = '' as $$
+declare p public.profiles; c text;
+begin
+  if auth.uid() is null then perform private.fail('Nema sesije. Osvježi stranicu.', 'no_session'); end if;
+  select * into p from public.profiles where user_id = auth.uid();
+  if found then return private.me_json(p); end if;
+  if not exists (select 1 from auth.users where id = auth.uid()) then
+    perform private.fail('Sesija je istekla. Osvježi stranicu.', 'stale');
+  end if;
+  if not (select s.registrations_open from public.demo_settings s where s.id = 1) then
+    perform private.fail('Prijave su trenutno zatvorene. Pitaj mentora.', 'closed');
+  end if;
 
--- Postojeća baza: prelazak na novi skup oznaka i nove podatke.
--- (Prazna baza: preskače se; podatke učitava seed.sql.)
+  select d.code into c from public.demo_codes d where d.used_at is null order by d.code limit 1 for update skip locked;
+  if c is null then perform private.fail('Sva mjesta su popunjena. Pitaj mentora.', 'no_codes'); end if;
+
+  begin
+    insert into public.profiles (user_id, role, source)
+      values (auth.uid(), 'student', case when p_izvor = 'stand' then 'stand' else 'finale' end)
+      returning * into p;
+  exception when unique_violation then
+    -- isti korisnik je istovremeno poslao dva zahtjeva
+    select * into p from public.profiles where user_id = auth.uid();
+    return private.me_json(p);
+  end;
+  update public.demo_codes set used_at = now(), used_by = p.id where code = c;
+  return private.me_json(p);
+end $$;
+
+create or replace function public.get_me()
+returns json language plpgsql stable security definer set search_path = '' as $$
+declare p public.profiles;
+begin
+  if auth.uid() is null then return null; end if;
+  select * into p from public.profiles where user_id = auth.uid();
+  if not found then return null; end if;
+  return private.me_json(p);
+end $$;
+
+-- „Imam kod“: nastavi nalog sa drugog uređaja. Nalog sa ovog uređaja (ako postoji) se briše.
+create or replace function public.redeem_code(p_code text)
+returns json language plpgsql security definer set search_path = '' as $$
+declare norm text; target public.profiles; cur public.profiles;
+begin
+  if auth.uid() is null then perform private.fail('Nema sesije. Osvježi stranicu.', 'no_session'); end if;
+  if (select count(*) from private.code_attempts a where a.user_id = auth.uid() and a.at > now() - interval '10 minutes') >= 10 then
+    perform private.fail('Previše pokušaja. Sačekaj nekoliko minuta.', 'too_many');
+  end if;
+  norm := upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'));
+  select p.* into target from public.demo_codes d join public.profiles p on p.id = d.used_by
+    where d.code = norm and p.role = 'student'
+    for update of p;
+  if not found then
+    insert into private.code_attempts (user_id) values (auth.uid());
+    -- greška ne smije poništiti upis pokušaja, pa vraćamo grešku kao rezultat
+    return json_build_object('error', 'Taj kod ne postoji. Provjeri slova.');
+  end if;
+  if target.user_id = auth.uid() then return private.me_json(target); end if;
+
+  select * into cur from public.profiles where user_id = auth.uid();
+  if found then
+    if cur.role <> 'student' then perform private.fail('Mentorski nalog ne može preuzeti kod.', 'not_student'); end if;
+    update public.demo_codes set used_at = null, used_by = null where used_by = cur.id;
+    delete from public.profiles where id = cur.id;
+  end if;
+  update public.profiles set user_id = auth.uid() where id = target.id returning * into target;
+  return private.me_json(target);
+end $$;
+
+create or replace function public.suggest_nicks()
+returns json language sql volatile security definer set search_path = '' as $$
+  with free as (
+    select n.nick, 0 as tier from private.nick_pool() n
+    where not exists (select 1 from public.profiles p where p.nick = n.nick)
+    union all
+    select n.nick || ' ' || s, s from private.nick_pool() n cross join generate_series(2, 9) s
+    where not exists (select 1 from public.profiles p where p.nick = n.nick || ' ' || s)
+  ), pick as (
+    select f.nick from free f order by f.tier, random() limit 6
+  )
+  select coalesce(json_agg(nick), '[]'::json) from pick
+$$;
+
+create or replace function public.set_nick(p_nick text)
+returns json language plpgsql security definer set search_path = '' as $$
+declare p public.profiles := private.me(); old text;
+begin
+  if p.role <> 'student' then perform private.fail('Mentor ne mijenja nik ovdje.', 'not_student'); end if;
+  if p_nick is null or not private.is_pool_nick(p_nick) then
+    perform private.fail('Izaberi jedno od ponuđenih imena.', 'bad_nick');
+  end if;
+  if p.nick = p_nick then return private.me_json(p); end if;
+  old := p.nick;
+  begin
+    update public.profiles set nick = p_nick where id = p.id returning * into p;
+  exception when unique_violation then
+    perform private.fail('To ime je upravo neko uzeo. Izaberi drugo.', 'taken');
+  end;
+  if old is null then perform private.add_event(p.nick, 'je tu 👋'); end if;
+  return private.me_json(p);
+end $$;
+
+-- Čuva 1–4 oznake i u istom odgovoru vraća poziv (pouzdano: ne zavisi od Realtime-a).
+create or replace function public.save_interests(p_tags text[])
+returns json language plpgsql security definer set search_path = '' as $$
+declare p public.profiles := private.me_student(); clean text[];
+begin
+  select coalesce(array_agg(distinct t), '{}') into clean from unnest(coalesce(p_tags, '{}')) t;
+  if cardinality(clean) < 1 or cardinality(clean) > 4 then
+    perform private.fail('Izaberi od 1 do 4 interesovanja.', 'bad_tags');
+  end if;
+  if exists (select 1 from unnest(clean) t where t not in (select slug from public.tags)) then
+    perform private.fail('Nepoznato interesovanje.', 'bad_tags');
+  end if;
+  delete from public.profile_tags where profile_id = p.id;
+  insert into public.profile_tags (profile_id, tag) select p.id, t from unnest(clean) t;
+  return json_build_object('me', private.me_json(p), 'invite', private.match_invite(p.id));
+end $$;
+
+create or replace function public.respond_invite(p_invite uuid, p_accept boolean)
+returns json language plpgsql security definer set search_path = '' as $$
+declare p public.profiles := private.me_student(); i public.invites;
+begin
+  select * into i from public.invites where id = p_invite and profile_id = p.id for update;
+  if not found then perform private.fail('Poziv nije pronađen.', 'not_found'); end if;
+  if i.status = 'pending' then
+    if p_accept then
+      perform private.join_internal(p, i.project_id);
+    else
+      update public.invites set status = 'declined', responded_at = now() where id = i.id;
+    end if;
+    select * into i from public.invites where id = p_invite;
+  end if;
+  return json_build_object('status', i.status, 'project_id', i.project_id);
+end $$;
+
+create or replace function public.join_project(p_project uuid)
+returns json language plpgsql security definer set search_path = '' as $$
+declare p public.profiles := private.me_student();
+begin
+  return json_build_object('status', case when private.join_internal(p, p_project) then 'joined' else 'already' end);
+end $$;
+
+-- „Za tebe“: poziv na čekanju + otvoreni timovi po mojim oznakama + ostali.
+create or replace function public.get_for_you()
+returns json language plpgsql stable security definer set search_path = '' as $$
+declare p public.profiles := private.me_student(); inv public.invites;
+begin
+  select v.* into inv from public.invites v join public.projects x on x.id = v.project_id
+    where v.profile_id = p.id and v.status = 'pending' and x.status = 'open'
+    order by v.created_at desc limit 1;
+  return json_build_object(
+    'invite', case when inv.id is null then null else private.invite_json(inv) end,
+    'matches', coalesce((
+      select json_agg(private.project_json(x, p.id) order by g.sort, x.created_at)
+      from public.projects x join public.tags g on g.slug = x.tag
+      where x.status = 'open' and x.tag in (select t.tag from public.profile_tags t where t.profile_id = p.id)
+    ), '[]'::json),
+    'others', coalesce((
+      select json_agg(private.project_json(x, p.id) order by x.is_fallback desc, x.created_at)
+      from public.projects x
+      where x.status = 'open' and (x.tag is null or x.tag not in (select t.tag from public.profile_tags t where t.profile_id = p.id))
+    ), '[]'::json)
+  );
+end $$;
+
+create or replace function public.get_my_teams()
+returns json language plpgsql stable security definer set search_path = '' as $$
+declare p public.profiles := private.me_student();
+begin
+  return json_build_object(
+    'teams', coalesce((
+      select json_agg(private.project_json(x, p.id) order by m.joined_at desc)
+      from public.memberships m join public.projects x on x.id = m.project_id where m.profile_id = p.id
+    ), '[]'::json),
+    'proposals', coalesce((
+      select json_agg(json_build_object('id', x.id, 'title', x.title, 'sentence', x.sentence, 'tag', x.tag, 'status', x.status) order by x.created_at desc)
+      from public.projects x where x.proposed_by = p.id and x.status <> 'open'
+    ), '[]'::json)
+  );
+end $$;
+
+-- Predlog projekta (sekundarno). Ide mentoru na odobrenje.
+create or replace function public.propose_project(p_title text, p_sentence text, p_tag text)
+returns uuid language plpgsql security definer set search_path = '' as $$
+declare p public.profiles := private.me_student(); new_id uuid; t text := btrim(coalesce(p_title, '')); s text := btrim(coalesce(p_sentence, ''));
+begin
+  if char_length(t) not between 3 and 60 then perform private.fail('Naslov treba da ima 3–60 znakova.', 'bad_title'); end if;
+  if char_length(s) not between 3 and 140 then perform private.fail('Opiši ideju u jednoj rečenici (do 140 znakova).', 'bad_sentence'); end if;
+  if p_tag is null or not exists (select 1 from public.tags where slug = p_tag) then perform private.fail('Izaberi oznaku.', 'bad_tags'); end if;
+  if (select count(*) from public.projects x where x.proposed_by = p.id and x.status = 'pending') >= 2 then
+    perform private.fail('Već imaš dva predloga koja čekaju mentora.', 'too_many');
+  end if;
+  insert into public.projects (title, sentence, tag, join_text, status, proposed_by, deadline)
+    values (t, s, p_tag, 'timu „' || t || '“', 'pending', p.id, current_date + 30)
+    returning projects.id into new_id;
+  perform private.add_event(p.nick, 'predlaže novi projekat 💡');
+  return new_id;
+end $$;
+
+-- ── RPC: platno (javno, bez prijave) ─────────────────────────
+-- Samo zbirni brojevi + nikovi na zidu.
+create or replace function public.get_screen()
+returns json language sql stable security definer set search_path = '' as $$
+  select json_build_object(
+    'registrations_open', (select s.registrations_open from public.demo_settings s where s.id = 1),
+    'people', (select count(*) from public.profiles p where p.role = 'student' and p.nick is not null),
+    'joined', (select count(distinct m.profile_id) from public.memberships m),
+    'teams', coalesce((
+      select json_agg(json_build_object('id', x.id, 'title', x.title, 'tag', x.tag, 'is_fallback', x.is_fallback,
+                                        'members', (select count(*) from public.memberships m where m.project_id = x.id))
+                      order by x.is_fallback, (select count(*) from public.memberships m where m.project_id = x.id) desc, x.created_at)
+      from public.projects x where x.status = 'open'
+    ), '[]'::json),
+    'wall', coalesce((
+      select json_agg(json_build_object('id', e.id, 'nick', e.nick, 'text', e.text, 'at', e.created_at) order by e.id desc)
+      from (select * from public.demo_events order by id desc limit 40) e
+    ), '[]'::json)
+  )
+$$;
+
+-- ── RPC: admin (mentor) ──────────────────────────────────────
+
+create or replace function public.get_admin()
+returns json language plpgsql stable security definer set search_path = '' as $$
+declare m public.profiles := private.require_mentor();
+begin
+  return json_build_object(
+    'nick', m.nick,
+    'registrations_open', (select s.registrations_open from public.demo_settings s where s.id = 1),
+    'reset_at', (select s.reset_at from public.demo_settings s where s.id = 1),
+    'codes_free', (select count(*) from public.demo_codes where used_at is null),
+    'codes_used', (select count(*) from public.demo_codes where used_at is not null),
+    'proposals', coalesce((
+      select json_agg(json_build_object('id', x.id, 'title', x.title, 'sentence', x.sentence, 'tag', x.tag,
+                                        'nick', (select p.nick from public.profiles p where p.id = x.proposed_by), 'created_at', x.created_at)
+                      order by x.created_at)
+      from public.projects x where x.status = 'pending'
+    ), '[]'::json),
+    'screen', public.get_screen()
+  );
+end $$;
+
+create or replace function public.set_registrations(p_open boolean)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  perform private.require_mentor();
+  update public.demo_settings set registrations_open = p_open where id = 1;
+end $$;
+
+create or replace function public.approve_project(p_project uuid, p_approve boolean)
+returns json language plpgsql security definer set search_path = '' as $$
+declare pr public.projects; author public.profiles; invited int := 0;
+begin
+  perform private.require_mentor();
+  select * into pr from public.projects where id = p_project and status = 'pending' for update;
+  if not found then perform private.fail('Predlog nije pronađen ili je već obrađen.', 'not_found'); end if;
+  if not p_approve then
+    update public.projects set status = 'rejected' where id = pr.id;
+    return json_build_object('status', 'rejected');
+  end if;
+  update public.projects set status = 'open', approved_at = now() where id = pr.id;
+  select * into author from public.profiles where id = pr.proposed_by;
+  if found and author.nick is not null then
+    insert into public.memberships (project_id, profile_id) values (pr.id, author.id) on conflict do nothing;
+    perform private.add_event(author.nick, 'pokreće projekat „' || pr.title || '“ 🚀');
+  end if;
+  invited := private.fan_out(pr.id);
+  return json_build_object('status', 'open', 'invited', invited);
+end $$;
+
+-- Vraća demo na početak u JEDNOJ transakciji: brišu se svi učesnici (i njihovi anonimni nalozi),
+-- predlozi, članstva, pozivi i zid; kodovi se oslobađaju; seed projekti se vraćaju. Mentori ostaju.
+create or replace function public.reset_demo()
+returns json language plpgsql security definer set search_path = '' as $$
+begin
+  perform private.require_mentor();
+  delete from auth.users u
+    where not exists (select 1 from public.profiles p where p.user_id = u.id and p.role = 'mentor');
+  delete from public.profiles where role = 'student';
+  delete from public.projects where true;
+  delete from public.demo_events where true;
+  delete from private.code_attempts where true;
+  update public.demo_codes set used_at = null, used_by = null where used_at is not null or used_by is not null;
+  perform private.load_seed();
+  update public.demo_settings set registrations_open = true, reset_at = now() where id = 1;
+  return json_build_object(
+    'projects', (select count(*) from public.projects),
+    'codes_free', (select count(*) from public.demo_codes where used_at is null)
+  );
+end $$;
+
+create or replace function public.generate_codes(p_n int)
+returns json language plpgsql security definer set search_path = '' as $$
+declare made int;
+begin
+  perform private.require_mentor();
+  if p_n is null or p_n < 1 or p_n > 1000 then perform private.fail('Broj kodova: 1–1000.', 'bad_n'); end if;
+  made := private.gen_codes(p_n);
+  return json_build_object('made', made, 'codes_free', (select count(*) from public.demo_codes where used_at is null));
+end $$;
+
+-- CSV za štand: broj prijava i broj pridruživanja po izvoru. Bez nikova.
+create or replace function public.export_stand_stats()
+returns json language plpgsql stable security definer set search_path = '' as $$
+begin
+  perform private.require_mentor();
+  return (
+    select json_agg(json_build_object(
+      'izvor', s.izvor,
+      'prijave', (select count(*) from public.profiles p where p.role = 'student' and p.source = s.izvor),
+      'pridruzivanja', (select count(*) from public.memberships m join public.profiles p on p.id = m.profile_id
+                        where p.role = 'student' and p.source = s.izvor)
+    ) order by s.ord)
+    from (values ('stand', 1), ('finale', 2)) s(izvor, ord)
+  );
+end $$;
+
+-- ── Prava na funkcije ────────────────────────────────────────
+
+revoke all on all functions in schema private from public, anon, authenticated;
+revoke all on all functions in schema public from public, anon, authenticated;
+grant execute on function
+  public.claim_demo_code(text), public.get_me(), public.redeem_code(text), public.suggest_nicks(),
+  public.set_nick(text), public.save_interests(text[]), public.respond_invite(uuid, boolean),
+  public.join_project(uuid), public.get_for_you(), public.get_my_teams(),
+  public.propose_project(text, text, text), public.get_admin(), public.set_registrations(boolean),
+  public.approve_project(uuid, boolean), public.reset_demo(), public.generate_codes(int),
+  public.export_stand_stats()
+to authenticated;
+grant execute on function public.get_screen() to anon, authenticated;
+
+-- ── Početni podaci ───────────────────────────────────────────
+
+insert into public.demo_settings (id) values (1) on conflict do nothing;
+select private.load_seed();
+select private.gen_codes(300);
+
+-- Mentorski nalog prof.e2e (ako korisnik prof.e2e@connected.test već postoji u auth.users).
 do $$
 begin
-  if not exists (select 1 from public.tags) then return; end if;
-  delete from auth.users u
-  where exists (select 1 from public.profiles p where p.user_id = u.id and p.role = 'student')
-     or not exists (select 1 from public.profiles p where p.user_id = u.id);
-  delete from public.notifications where true;
-  delete from public.help_signals where true;
-  delete from public.projects where true;
-  delete from public.group_members where true;
-  delete from public.opportunity_interest where true;
-  delete from public.opportunities where true;
-  delete from public.profiles where role = 'student';
-  delete from public.profile_tags where tag not in ('kuvanje', 'poslasticarstvo', 'barmen', 'turizam', 'jezici', 'preduzetnistvo', 'crtanje', 'video', 'muzika', 'sport');
-  delete from private.first_group_events where true;
-  delete from public.tags where slug not in ('kuvanje', 'poslasticarstvo', 'barmen', 'turizam', 'jezici', 'preduzetnistvo', 'crtanje', 'video', 'muzika', 'sport');
-  update public.access_codes set used_at = null where role = 'student';
-  perform private.load_seed();
-  perform private.load_seed_opportunities();
-  update public.demo_meta set reset_at = now() where id = 1;
+  if exists (select 1 from auth.users where lower(email) = 'prof.e2e@connected.test') then
+    perform private.make_mentor('prof.e2e');
+  end if;
 end $$;
-
-
--- >>> seed.sql
--- ═════════════════════════════════════════════════════════════
---  ConnectEd · seed (GENERISANO: npm run gen:seed — ne mijenjati ručno)
---  Svi učenici su izmišljeni. private.load_seed() poziva i reset_demo().
--- ═════════════════════════════════════════════════════════════
-
-create or replace function private.load_seed()
-returns void language plpgsql security definer set search_path = '' as $seed$
-begin
-  insert into public.classes (id, razred, smjer, label) values
-    ('1-1', 1, 'Ekonomski tehničar', 'I-1'),
-    ('1-2', 1, 'Turistički tehničar', 'I-2'),
-    ('1-3', 1, 'Kuvar', 'I-3'),
-    ('1-4', 1, 'Konobar', 'I-4'),
-    ('2-1', 2, 'Ekonomski tehničar', 'II-1'),
-    ('2-2', 2, 'Turistički tehničar', 'II-2'),
-    ('2-3', 2, 'Kuvar', 'II-3'),
-    ('2-4', 2, 'Konobar', 'II-4'),
-    ('3-1', 3, 'Ekonomski tehničar', 'III-1'),
-    ('3-2', 3, 'Turistički tehničar', 'III-2'),
-    ('3-3', 3, 'Kuvar', 'III-3'),
-    ('3-4', 3, 'Konobar', 'III-4'),
-    ('4-1', 4, 'Ekonomski tehničar', 'IV-1'),
-    ('4-2', 4, 'Turistički tehničar', 'IV-2'),
-    ('4-3', 4, 'Kuvar', 'IV-3'),
-    ('4-4', 4, 'Konobar', 'IV-4')
-  on conflict (id) do update set razred = excluded.razred, smjer = excluded.smjer, label = excluded.label;
-
-  insert into public.tags (slug, label, icon, sort) values
-    ('kuvanje', 'Kuvanje', '🍳', 0),
-    ('poslasticarstvo', 'Poslastičarstvo', '🧁', 1),
-    ('barmen', 'Barmen i posluženje', '🍹', 2),
-    ('turizam', 'Turizam i ture', '🧭', 3),
-    ('jezici', 'Strani jezici', '🗣️', 4),
-    ('preduzetnistvo', 'Preduzetništvo', '💼', 5),
-    ('crtanje', 'Crtanje i dizajn', '🎨', 6),
-    ('video', 'Foto i video', '📸', 7),
-    ('muzika', 'Muzika i ples', '🎵', 8),
-    ('sport', 'Sport', '⚽', 9)
-  on conflict (slug) do update set label = excluded.label, icon = excluded.icon, sort = excluded.sort;
-
-  insert into public.access_codes (code, role, class_id) values
-    ('1101', 'student', '1-1'),
-    ('1102', 'student', '1-1'),
-    ('1103', 'student', '1-1'),
-    ('1104', 'student', '1-1'),
-    ('1105', 'student', '1-1'),
-    ('1106', 'student', '1-1'),
-    ('1107', 'student', '1-1'),
-    ('1108', 'student', '1-1'),
-    ('1109', 'student', '1-1'),
-    ('1110', 'student', '1-1'),
-    ('1201', 'student', '1-2'),
-    ('1202', 'student', '1-2'),
-    ('1203', 'student', '1-2'),
-    ('1204', 'student', '1-2'),
-    ('1205', 'student', '1-2'),
-    ('1206', 'student', '1-2'),
-    ('1207', 'student', '1-2'),
-    ('1208', 'student', '1-2'),
-    ('1209', 'student', '1-2'),
-    ('1210', 'student', '1-2'),
-    ('1301', 'student', '1-3'),
-    ('1302', 'student', '1-3'),
-    ('1303', 'student', '1-3'),
-    ('1304', 'student', '1-3'),
-    ('1305', 'student', '1-3'),
-    ('1306', 'student', '1-3'),
-    ('1307', 'student', '1-3'),
-    ('1308', 'student', '1-3'),
-    ('1309', 'student', '1-3'),
-    ('1310', 'student', '1-3'),
-    ('1401', 'student', '1-4'),
-    ('1402', 'student', '1-4'),
-    ('1403', 'student', '1-4'),
-    ('1404', 'student', '1-4'),
-    ('1405', 'student', '1-4'),
-    ('1406', 'student', '1-4'),
-    ('1407', 'student', '1-4'),
-    ('1408', 'student', '1-4'),
-    ('1409', 'student', '1-4'),
-    ('1410', 'student', '1-4'),
-    ('2101', 'student', '2-1'),
-    ('2102', 'student', '2-1'),
-    ('2103', 'student', '2-1'),
-    ('2104', 'student', '2-1'),
-    ('2105', 'student', '2-1'),
-    ('2106', 'student', '2-1'),
-    ('2107', 'student', '2-1'),
-    ('2108', 'student', '2-1'),
-    ('2109', 'student', '2-1'),
-    ('2110', 'student', '2-1'),
-    ('2201', 'student', '2-2'),
-    ('2202', 'student', '2-2'),
-    ('2203', 'student', '2-2'),
-    ('2204', 'student', '2-2'),
-    ('2205', 'student', '2-2'),
-    ('2206', 'student', '2-2'),
-    ('2207', 'student', '2-2'),
-    ('2208', 'student', '2-2'),
-    ('2209', 'student', '2-2'),
-    ('2210', 'student', '2-2'),
-    ('2301', 'student', '2-3'),
-    ('2302', 'student', '2-3'),
-    ('2303', 'student', '2-3'),
-    ('2304', 'student', '2-3'),
-    ('2305', 'student', '2-3'),
-    ('2306', 'student', '2-3'),
-    ('2307', 'student', '2-3'),
-    ('2308', 'student', '2-3'),
-    ('2309', 'student', '2-3'),
-    ('2310', 'student', '2-3'),
-    ('2401', 'student', '2-4'),
-    ('2402', 'student', '2-4'),
-    ('2403', 'student', '2-4'),
-    ('2404', 'student', '2-4'),
-    ('2405', 'student', '2-4'),
-    ('2406', 'student', '2-4'),
-    ('2407', 'student', '2-4'),
-    ('2408', 'student', '2-4'),
-    ('2409', 'student', '2-4'),
-    ('2410', 'student', '2-4'),
-    ('3101', 'student', '3-1'),
-    ('3102', 'student', '3-1'),
-    ('3103', 'student', '3-1'),
-    ('3104', 'student', '3-1'),
-    ('3105', 'student', '3-1'),
-    ('3106', 'student', '3-1'),
-    ('3107', 'student', '3-1'),
-    ('3108', 'student', '3-1'),
-    ('3109', 'student', '3-1'),
-    ('3110', 'student', '3-1'),
-    ('3201', 'student', '3-2'),
-    ('3202', 'student', '3-2'),
-    ('3203', 'student', '3-2'),
-    ('3204', 'student', '3-2'),
-    ('3205', 'student', '3-2'),
-    ('3206', 'student', '3-2'),
-    ('3207', 'student', '3-2'),
-    ('3208', 'student', '3-2'),
-    ('3209', 'student', '3-2'),
-    ('3210', 'student', '3-2'),
-    ('3301', 'student', '3-3'),
-    ('3302', 'student', '3-3'),
-    ('3303', 'student', '3-3'),
-    ('3304', 'student', '3-3'),
-    ('3305', 'student', '3-3'),
-    ('3306', 'student', '3-3'),
-    ('3307', 'student', '3-3'),
-    ('3308', 'student', '3-3'),
-    ('3309', 'student', '3-3'),
-    ('3310', 'student', '3-3'),
-    ('3401', 'student', '3-4'),
-    ('3402', 'student', '3-4'),
-    ('3403', 'student', '3-4'),
-    ('3404', 'student', '3-4'),
-    ('3405', 'student', '3-4'),
-    ('3406', 'student', '3-4'),
-    ('3407', 'student', '3-4'),
-    ('3408', 'student', '3-4'),
-    ('3409', 'student', '3-4'),
-    ('3410', 'student', '3-4'),
-    ('4101', 'student', '4-1'),
-    ('4102', 'student', '4-1'),
-    ('4103', 'student', '4-1'),
-    ('4104', 'student', '4-1'),
-    ('4105', 'student', '4-1'),
-    ('4106', 'student', '4-1'),
-    ('4107', 'student', '4-1'),
-    ('4108', 'student', '4-1'),
-    ('4109', 'student', '4-1'),
-    ('4110', 'student', '4-1'),
-    ('4201', 'student', '4-2'),
-    ('4202', 'student', '4-2'),
-    ('4203', 'student', '4-2'),
-    ('4204', 'student', '4-2'),
-    ('4205', 'student', '4-2'),
-    ('4206', 'student', '4-2'),
-    ('4207', 'student', '4-2'),
-    ('4208', 'student', '4-2'),
-    ('4209', 'student', '4-2'),
-    ('4210', 'student', '4-2'),
-    ('4301', 'student', '4-3'),
-    ('4302', 'student', '4-3'),
-    ('4303', 'student', '4-3'),
-    ('4304', 'student', '4-3'),
-    ('4305', 'student', '4-3'),
-    ('4306', 'student', '4-3'),
-    ('4307', 'student', '4-3'),
-    ('4308', 'student', '4-3'),
-    ('4309', 'student', '4-3'),
-    ('4310', 'student', '4-3'),
-    ('4401', 'student', '4-4'),
-    ('4402', 'student', '4-4'),
-    ('4403', 'student', '4-4'),
-    ('4404', 'student', '4-4'),
-    ('4405', 'student', '4-4'),
-    ('4406', 'student', '4-4'),
-    ('4407', 'student', '4-4'),
-    ('4408', 'student', '4-4'),
-    ('4409', 'student', '4-4'),
-    ('4410', 'student', '4-4'),
-    ('9001', 'mentor', null),
-    ('9002', 'mentor', null),
-    ('9003', 'mentor', null),
-    ('9004', 'mentor', null),
-    ('9005', 'mentor', null),
-    ('8001', 'pedagog', null),
-    ('8002', 'pedagog', null)
-  on conflict (code) do nothing;
-
-  insert into public.profiles (id, nick, nick_norm, role, class_id, onboarded, is_seed, created_at) values
-    ('a0000000-0000-4000-8000-000000000001', 'luna.k', private.normalize_nick('luna.k'), 'student', '1-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000002', 'marko_99', private.normalize_nick('marko_99'), 'student', '1-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000003', 'tea.art', private.normalize_nick('tea.art'), 'student', '1-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000004', 'nikola7', private.normalize_nick('nikola7'), 'student', '1-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000005', 'sara.slatko', private.normalize_nick('sara.slatko'), 'student', '1-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000006', 'vuk', private.normalize_nick('vuk'), 'student', '1-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000007', 'mia_mix', private.normalize_nick('mia_mix'), 'student', '1-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000008', 'dejo', private.normalize_nick('dejo'), 'student', '1-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000009', 'ana.vodi', private.normalize_nick('ana.vodi'), 'student', '2-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000010', 'bojan.b', private.normalize_nick('bojan.b'), 'student', '2-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000011', 'lena', private.normalize_nick('lena'), 'student', '2-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000012', 'stefan.ritam', private.normalize_nick('stefan.ritam'), 'student', '2-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000013', 'jana_torte', private.normalize_nick('jana_torte'), 'student', '2-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000014', 'petar.chef', private.normalize_nick('petar.chef'), 'student', '2-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000015', 'iva.shake', private.normalize_nick('iva.shake'), 'student', '2-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000016', 'milos', private.normalize_nick('milos'), 'student', '2-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000017', 'kaća', private.normalize_nick('kaća'), 'student', '3-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000018', 'dusan.foto', private.normalize_nick('dusan.foto'), 'student', '3-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000019', 'eli.ples', private.normalize_nick('eli.ples'), 'student', '3-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000020', 'andrej.gg', private.normalize_nick('andrej.gg'), 'student', '3-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000021', 'maja.mural', private.normalize_nick('maja.mural'), 'student', '3-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000022', 'ognjen', private.normalize_nick('ognjen'), 'student', '3-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000023', 'tamara', private.normalize_nick('tamara'), 'student', '3-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000024', 'luka.bas', private.normalize_nick('luka.bas'), 'student', '3-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000025', 'mina.pise', private.normalize_nick('mina.pise'), 'student', '4-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000026', 'filip.cut', private.normalize_nick('filip.cut'), 'student', '4-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000027', 'nina', private.normalize_nick('nina'), 'student', '4-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000028', 'relja', private.normalize_nick('relja'), 'student', '4-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000029', 'zara', private.normalize_nick('zara'), 'student', '4-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000030', 'bane.drums', private.normalize_nick('bane.drums'), 'student', '4-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000031', 'ena.crta', private.normalize_nick('ena.crta'), 'student', '1-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000032', 'igor', private.normalize_nick('igor'), 'student', '1-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000033', 'sofija.en', private.normalize_nick('sofija.en'), 'student', '1-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000034', 'dario', private.normalize_nick('dario'), 'student', '2-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000035', 'kiki', private.normalize_nick('kiki'), 'student', '2-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000036', 'lazar.beat', private.normalize_nick('lazar.beat'), 'student', '3-4', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000037', 'hana', private.normalize_nick('hana'), 'student', '3-2', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000038', 'teo', private.normalize_nick('teo'), 'student', '4-3', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000039', 'mila.m', private.normalize_nick('mila.m'), 'student', '4-1', true, true, now() - interval '70 days'),
-    ('a0000000-0000-4000-8000-000000000040', 'pavle', private.normalize_nick('pavle'), 'student', '4-4', true, true, now() - interval '70 days')
-  on conflict (id) do nothing;
-
-  insert into public.profile_tags (profile_id, tag, kind) values
-    ('a0000000-0000-4000-8000-000000000001', 'crtanje', 'znam'),
-    ('a0000000-0000-4000-8000-000000000001', 'video', 'volim'),
-    ('a0000000-0000-4000-8000-000000000002', 'sport', 'znam'),
-    ('a0000000-0000-4000-8000-000000000003', 'crtanje', 'znam'),
-    ('a0000000-0000-4000-8000-000000000003', 'muzika', 'volim'),
-    ('a0000000-0000-4000-8000-000000000004', 'turizam', 'volim'),
-    ('a0000000-0000-4000-8000-000000000004', 'jezici', 'znam'),
-    ('a0000000-0000-4000-8000-000000000005', 'poslasticarstvo', 'znam'),
-    ('a0000000-0000-4000-8000-000000000005', 'kuvanje', 'volim'),
-    ('a0000000-0000-4000-8000-000000000006', 'kuvanje', 'znam'),
-    ('a0000000-0000-4000-8000-000000000006', 'sport', 'volim'),
-    ('a0000000-0000-4000-8000-000000000007', 'barmen', 'znam'),
-    ('a0000000-0000-4000-8000-000000000007', 'muzika', 'volim'),
-    ('a0000000-0000-4000-8000-000000000008', 'barmen', 'volim'),
-    ('a0000000-0000-4000-8000-000000000008', 'sport', 'znam'),
-    ('a0000000-0000-4000-8000-000000000009', 'turizam', 'znam'),
-    ('a0000000-0000-4000-8000-000000000009', 'jezici', 'znam'),
-    ('a0000000-0000-4000-8000-000000000009', 'video', 'volim'),
-    ('a0000000-0000-4000-8000-000000000010', 'preduzetnistvo', 'znam'),
-    ('a0000000-0000-4000-8000-000000000011', 'jezici', 'znam'),
-    ('a0000000-0000-4000-8000-000000000011', 'video', 'volim'),
-    ('a0000000-0000-4000-8000-000000000012', 'muzika', 'znam'),
-    ('a0000000-0000-4000-8000-000000000013', 'poslasticarstvo', 'znam'),
-    ('a0000000-0000-4000-8000-000000000013', 'crtanje', 'volim'),
-    ('a0000000-0000-4000-8000-000000000014', 'kuvanje', 'znam'),
-    ('a0000000-0000-4000-8000-000000000014', 'preduzetnistvo', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000015', 'barmen', 'znam'),
-    ('a0000000-0000-4000-8000-000000000015', 'muzika', 'volim'),
-    ('a0000000-0000-4000-8000-000000000016', 'sport', 'znam'),
-    ('a0000000-0000-4000-8000-000000000016', 'muzika', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000017', 'preduzetnistvo', 'znam'),
-    ('a0000000-0000-4000-8000-000000000017', 'jezici', 'volim'),
-    ('a0000000-0000-4000-8000-000000000018', 'video', 'znam'),
-    ('a0000000-0000-4000-8000-000000000018', 'turizam', 'volim'),
-    ('a0000000-0000-4000-8000-000000000019', 'muzika', 'znam'),
-    ('a0000000-0000-4000-8000-000000000020', 'sport', 'znam'),
-    ('a0000000-0000-4000-8000-000000000020', 'crtanje', 'volim'),
-    ('a0000000-0000-4000-8000-000000000021', 'crtanje', 'znam'),
-    ('a0000000-0000-4000-8000-000000000021', 'poslasticarstvo', 'volim'),
-    ('a0000000-0000-4000-8000-000000000022', 'kuvanje', 'volim'),
-    ('a0000000-0000-4000-8000-000000000022', 'muzika', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000023', 'barmen', 'znam'),
-    ('a0000000-0000-4000-8000-000000000023', 'jezici', 'volim'),
-    ('a0000000-0000-4000-8000-000000000024', 'muzika', 'znam'),
-    ('a0000000-0000-4000-8000-000000000024', 'sport', 'volim'),
-    ('a0000000-0000-4000-8000-000000000025', 'jezici', 'znam'),
-    ('a0000000-0000-4000-8000-000000000025', 'preduzetnistvo', 'volim'),
-    ('a0000000-0000-4000-8000-000000000026', 'video', 'znam'),
-    ('a0000000-0000-4000-8000-000000000027', 'turizam', 'znam'),
-    ('a0000000-0000-4000-8000-000000000027', 'muzika', 'volim'),
-    ('a0000000-0000-4000-8000-000000000028', 'sport', 'znam'),
-    ('a0000000-0000-4000-8000-000000000028', 'turizam', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000029', 'poslasticarstvo', 'volim'),
-    ('a0000000-0000-4000-8000-000000000029', 'kuvanje', 'znam'),
-    ('a0000000-0000-4000-8000-000000000030', 'muzika', 'znam'),
-    ('a0000000-0000-4000-8000-000000000030', 'preduzetnistvo', 'volim'),
-    ('a0000000-0000-4000-8000-000000000031', 'crtanje', 'volim'),
-    ('a0000000-0000-4000-8000-000000000032', 'kuvanje', 'volim'),
-    ('a0000000-0000-4000-8000-000000000032', 'sport', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000033', 'jezici', 'znam'),
-    ('a0000000-0000-4000-8000-000000000033', 'turizam', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000034', 'barmen', 'volim'),
-    ('a0000000-0000-4000-8000-000000000034', 'sport', 'volim'),
-    ('a0000000-0000-4000-8000-000000000035', 'poslasticarstvo', 'volim'),
-    ('a0000000-0000-4000-8000-000000000035', 'video', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000036', 'muzika', 'volim'),
-    ('a0000000-0000-4000-8000-000000000037', 'muzika', 'volim'),
-    ('a0000000-0000-4000-8000-000000000037', 'barmen', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000038', 'preduzetnistvo', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000038', 'sport', 'volim'),
-    ('a0000000-0000-4000-8000-000000000039', 'crtanje', 'ucim'),
-    ('a0000000-0000-4000-8000-000000000039', 'jezici', 'volim'),
-    ('a0000000-0000-4000-8000-000000000040', 'sport', 'volim'),
-    ('a0000000-0000-4000-8000-000000000040', 'kuvanje', 'ucim')
-  on conflict do nothing;
-
-  insert into public.projects (id, title, goal, icon, spots, status, leader_id, created_at, approved_at, completed_at, deadline, result_text) values
-    ('b0000000-0000-4000-8000-000000000001', 'Ketering za školsku proslavu traži poslastičara', 'Slatki sto za 150 gostiju na proslavi Dana škole.', '🧁', 3, 'open', 'a0000000-0000-4000-8000-000000000014', now() - interval '9 days', now() - interval '8 days', null, current_date + 18, null),
-    ('b0000000-0000-4000-8000-000000000002', 'Tura kroz Stari Bar traži vodiča na engleskom', 'Šetnja za goste iz partnerske škole iz Italije.', '🧭', 3, 'open', 'a0000000-0000-4000-8000-000000000009', now() - interval '8 days', now() - interval '7 days', null, current_date + 21, null),
-    ('b0000000-0000-4000-8000-000000000003', 'Školski mural traži nekoga ko crta', 'Mural na zidu kod sale: „Naša škola, naš sto“.', '🎨', 3, 'open', 'a0000000-0000-4000-8000-000000000021', now() - interval '14 days', now() - interval '13 days', null, current_date + 14, null),
-    ('b0000000-0000-4000-8000-000000000005', 'Bezalkoholni kokteli za Dan škole traže barmena', 'Meni od pet mocktaila i posluženje za goste.', '🍹', 2, 'open', 'a0000000-0000-4000-8000-000000000023', now() - interval '5 days', now() - interval '4 days', null, current_date + 18, null),
-    ('b0000000-0000-4000-8000-000000000006', 'Turnir u odbojci traži organizatore', 'Međuodjeljenski turnir: raspored, sudije, medalje.', '🏐', 4, 'open', 'a0000000-0000-4000-8000-000000000028', now() - interval '10 days', now() - interval '9 days', null, current_date + 25, null),
-    ('b0000000-0000-4000-8000-000000000007', 'Mini sajam učeničke zadruge traži prodavce', 'Štand sa domaćim proizvodima i cjenovnikom na dva jezika.', '💼', 3, 'open', 'a0000000-0000-4000-8000-000000000017', now() - interval '7 days', now() - interval '6 days', null, current_date + 20, null),
-    ('b0000000-0000-4000-8000-000000000009', 'Muzički program za maturu traži izvođače', 'Ples i dvije pjesme za maturski program.', '💃', 4, 'open', 'a0000000-0000-4000-8000-000000000019', now() - interval '3 days', now() - interval '2 days', null, current_date + 40, null),
-    ('b0000000-0000-4000-8000-000000000012', 'Kuvar za jedan dan: radionica za osnovce', 'Radionica pravljenja palačinki za 30 osnovaca.', '👩‍🍳', 3, 'done', 'a0000000-0000-4000-8000-000000000029', now() - interval '35 days', now() - interval '34 days', now() - interval '10 days', current_date + -9, '30 osnovaca, 200 palačinki i nijedna izgorjela. Recepte smo podijelili roditeljima.'),
-    ('b0000000-0000-4000-8000-000000000014', 'Novogodišnji štand učeničke zadruge', 'Prodaja kolača i čestitki za humanitarnu akciju.', '🎄', 3, 'done', 'a0000000-0000-4000-8000-000000000010', now() - interval '60 days', now() - interval '59 days', now() - interval '20 days', current_date + -19, 'Prikupili smo 640 € za opremu dječjeg odjeljenja bolnice.'),
-    ('b0000000-0000-4000-8000-000000000015', 'Video vodič kroz Stari grad', 'Kratki video na tri jezika za goste škole.', '🎬', 3, 'done', 'a0000000-0000-4000-8000-000000000026', now() - interval '40 days', now() - interval '39 days', now() - interval '6 days', current_date + -5, 'Snimili smo vodič od 4 minuta na crnogorskom, engleskom i italijanskom. Pušta se na Danu otvorenih vrata.')
-  on conflict (id) do nothing;
-
-  insert into public.project_tags (project_id, tag) values
-    ('b0000000-0000-4000-8000-000000000001', 'poslasticarstvo'),
-    ('b0000000-0000-4000-8000-000000000001', 'kuvanje'),
-    ('b0000000-0000-4000-8000-000000000002', 'turizam'),
-    ('b0000000-0000-4000-8000-000000000002', 'jezici'),
-    ('b0000000-0000-4000-8000-000000000003', 'crtanje'),
-    ('b0000000-0000-4000-8000-000000000005', 'barmen'),
-    ('b0000000-0000-4000-8000-000000000006', 'sport'),
-    ('b0000000-0000-4000-8000-000000000006', 'preduzetnistvo'),
-    ('b0000000-0000-4000-8000-000000000007', 'preduzetnistvo'),
-    ('b0000000-0000-4000-8000-000000000007', 'jezici'),
-    ('b0000000-0000-4000-8000-000000000009', 'muzika'),
-    ('b0000000-0000-4000-8000-000000000012', 'kuvanje'),
-    ('b0000000-0000-4000-8000-000000000012', 'poslasticarstvo'),
-    ('b0000000-0000-4000-8000-000000000014', 'preduzetnistvo'),
-    ('b0000000-0000-4000-8000-000000000014', 'poslasticarstvo'),
-    ('b0000000-0000-4000-8000-000000000014', 'crtanje'),
-    ('b0000000-0000-4000-8000-000000000015', 'video'),
-    ('b0000000-0000-4000-8000-000000000015', 'turizam'),
-    ('b0000000-0000-4000-8000-000000000015', 'jezici')
-  on conflict do nothing;
-
-  insert into public.group_members (project_id, profile_id, joined_at) values
-    ('b0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000014', now() - interval '8 days'),
-    ('b0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000009', now() - interval '7 days'),
-    ('b0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000021', now() - interval '13 days'),
-    ('b0000000-0000-4000-8000-000000000005', 'a0000000-0000-4000-8000-000000000023', now() - interval '4 days'),
-    ('b0000000-0000-4000-8000-000000000006', 'a0000000-0000-4000-8000-000000000028', now() - interval '9 days'),
-    ('b0000000-0000-4000-8000-000000000007', 'a0000000-0000-4000-8000-000000000017', now() - interval '6 days'),
-    ('b0000000-0000-4000-8000-000000000009', 'a0000000-0000-4000-8000-000000000019', now() - interval '2 days'),
-    ('b0000000-0000-4000-8000-000000000012', 'a0000000-0000-4000-8000-000000000029', now() - interval '34 days'),
-    ('b0000000-0000-4000-8000-000000000014', 'a0000000-0000-4000-8000-000000000010', now() - interval '59 days'),
-    ('b0000000-0000-4000-8000-000000000015', 'a0000000-0000-4000-8000-000000000026', now() - interval '39 days'),
-    ('b0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000005', now() - interval '7 days'),
-    ('b0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000013', now() - interval '7 days'),
-    ('b0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000004', now() - interval '6 days'),
-    ('b0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000027', now() - interval '6 days'),
-    ('b0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000003', now() - interval '12 days'),
-    ('b0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', now() - interval '12 days'),
-    ('b0000000-0000-4000-8000-000000000005', 'a0000000-0000-4000-8000-000000000007', now() - interval '3 days'),
-    ('b0000000-0000-4000-8000-000000000006', 'a0000000-0000-4000-8000-000000000002', now() - interval '8 days'),
-    ('b0000000-0000-4000-8000-000000000006', 'a0000000-0000-4000-8000-000000000016', now() - interval '8 days'),
-    ('b0000000-0000-4000-8000-000000000006', 'a0000000-0000-4000-8000-000000000020', now() - interval '8 days'),
-    ('b0000000-0000-4000-8000-000000000007', 'a0000000-0000-4000-8000-000000000008', now() - interval '5 days'),
-    ('b0000000-0000-4000-8000-000000000007', 'a0000000-0000-4000-8000-000000000025', now() - interval '5 days'),
-    ('b0000000-0000-4000-8000-000000000009', 'a0000000-0000-4000-8000-000000000015', now() - interval '1 days'),
-    ('b0000000-0000-4000-8000-000000000009', 'a0000000-0000-4000-8000-000000000024', now() - interval '1 days'),
-    ('b0000000-0000-4000-8000-000000000009', 'a0000000-0000-4000-8000-000000000012', now() - interval '1 days'),
-    ('b0000000-0000-4000-8000-000000000012', 'a0000000-0000-4000-8000-000000000006', now() - interval '33 days'),
-    ('b0000000-0000-4000-8000-000000000012', 'a0000000-0000-4000-8000-000000000022', now() - interval '33 days'),
-    ('b0000000-0000-4000-8000-000000000014', 'a0000000-0000-4000-8000-000000000013', now() - interval '58 days'),
-    ('b0000000-0000-4000-8000-000000000014', 'a0000000-0000-4000-8000-000000000017', now() - interval '58 days'),
-    ('b0000000-0000-4000-8000-000000000014', 'a0000000-0000-4000-8000-000000000030', now() - interval '58 days'),
-    ('b0000000-0000-4000-8000-000000000015', 'a0000000-0000-4000-8000-000000000018', now() - interval '38 days'),
-    ('b0000000-0000-4000-8000-000000000015', 'a0000000-0000-4000-8000-000000000011', now() - interval '38 days')
-  on conflict do nothing;
-
-  insert into public.wall_posts (project_id, author_id, kind, body, created_at) values
-    ('b0000000-0000-4000-8000-000000000003', null, 'system', 'Projekat je odobren. Srećno, tim! 🚀', now() - interval '13 days'),
-    ('b0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000021', 'post', 'Skica je odobrena! Boje stižu u petak.', now() - interval '6 days'),
-    ('b0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000003', 'post', 'Ja donosim šablone za sunce 🌞', now() - interval '2 days'),
-    ('b0000000-0000-4000-8000-000000000001', null, 'system', 'Projekat je odobren. Srećno, tim! 🚀', now() - interval '8 days'),
-    ('b0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000014', 'post', 'Probni dan u kuhinji: srijeda, 7. čas.', now() - interval '3 days'),
-    ('b0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000009', 'post', 'Ruta: Kapija → Akvadukt → Sahat-kula. Treba nam još neko za engleski!', now() - interval '4 days'),
-    ('b0000000-0000-4000-8000-000000000009', 'a0000000-0000-4000-8000-000000000019', 'post', 'Proba u fiskulturnoj sali, petak poslije škole.', now() - interval '2 days'),
-    ('b0000000-0000-4000-8000-000000000015', null, 'system', 'Projekat je završen! Rezultat je sada u feedu škole. 🎉', now() - interval '6 days')
-;
-
-  insert into private.first_group_events (profile_id, at) values
-    ('a0000000-0000-4000-8000-000000000003', now() - interval '12 days'),
-    ('a0000000-0000-4000-8000-000000000004', now() - interval '6 days'),
-    ('a0000000-0000-4000-8000-000000000008', now() - interval '5 days'),
-    ('a0000000-0000-4000-8000-000000000018', now() - interval '2 days'),
-    ('a0000000-0000-4000-8000-000000000027', now() - interval '1 days')
-;
-end $seed$;
-
-revoke all on function private.load_seed() from public, anon, authenticated;
-
-select private.load_seed();
-select private.load_seed_opportunities();
