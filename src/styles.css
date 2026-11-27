@@ -309,3 +309,14 @@ textarea.input { resize: vertical; min-height: 84px; }
   .screen { grid-template-columns: 1fr; overflow: visible; }
   .qr { width: min(70vw, 320px); }
 }
+
+/* ── Pregled tima ──────────────────────────────── */
+.back { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; background: none; border: 0; color: var(--violet); font-weight: 700; padding: 4px 0; }
+.back svg { transform: rotate(180deg); }
+.team-head { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.team-head .ptile.big { margin-bottom: 4px; }
+.members { display: flex; flex-wrap: wrap; gap: 8px; }
+.member { display: inline-flex; align-items: center; gap: 8px; background: #f6f5fa; border-radius: 999px; padding: 5px 14px 5px 5px; font-weight: 700; font-family: var(--head); font-size: 15px; }
+.member.me { background: var(--violet-soft); color: var(--violet); }
+.avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 13px; font-weight: 800; background: var(--grad); flex: none; }
+.team .chev { color: var(--ink-3); align-self: center; }

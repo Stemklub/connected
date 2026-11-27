@@ -33,7 +33,7 @@ declare r record;
 begin
   for r in
     select p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-    where n.nspname = 'public' and p.proname = any (array['approve_project', 'check_code', 'complete_project', 'create_opportunity', 'create_project', 'get_feed', 'get_me', 'get_mentor_dashboard', 'get_metrics', 'get_my_groups', 'get_my_invites', 'get_my_tags', 'get_notifications', 'get_opportunities', 'get_opportunity', 'get_project', 'join_project', 'leave_project', 'mark_notifications_read', 'nick_status', 'post_wall', 'redeem_code', 'request_help', 'reset_demo', 'resolve_help', 'respond_invite', 'save_tags', 'toggle_opportunity_interest', 'claim_demo_code', 'suggest_nicks', 'set_nick', 'save_interests', 'get_for_you', 'get_my_teams', 'propose_project', 'get_screen', 'get_admin', 'set_registrations', 'generate_codes', 'export_stand_stats'])
+    where n.nspname = 'public' and p.proname = any (array['approve_project', 'check_code', 'complete_project', 'create_opportunity', 'create_project', 'get_feed', 'get_me', 'get_mentor_dashboard', 'get_metrics', 'get_my_groups', 'get_my_invites', 'get_my_tags', 'get_notifications', 'get_opportunities', 'get_opportunity', 'get_project', 'join_project', 'leave_project', 'mark_notifications_read', 'nick_status', 'post_wall', 'redeem_code', 'request_help', 'reset_demo', 'resolve_help', 'respond_invite', 'save_tags', 'toggle_opportunity_interest', 'claim_demo_code', 'get_team', 'suggest_nicks', 'set_nick', 'save_interests', 'get_for_you', 'get_my_teams', 'propose_project', 'get_screen', 'get_admin', 'set_registrations', 'generate_codes', 'export_stand_stats'])
   loop
     execute 'drop function ' || r.sig || ' cascade';
   end loop;
@@ -614,6 +614,25 @@ begin
   );
 end $$;
 
+-- Pregled tima: svi članovi (nikovi), redom kako su ulazili. Za otvorene timove i za članove.
+create or replace function public.get_team(p_project uuid)
+returns json language plpgsql stable security definer set search_path = '' as $$
+declare p public.profiles := private.me_student(); pr public.projects;
+begin
+  select * into pr from public.projects x
+    where x.id = p_project
+      and (x.status = 'open' or x.proposed_by = p.id
+           or exists (select 1 from public.memberships m where m.project_id = x.id and m.profile_id = p.id));
+  if not found then perform private.fail('Tim nije pronađen.', 'not_found'); end if;
+  return json_build_object(
+    'project', private.project_json(pr, p.id),
+    'members', coalesce((
+      select json_agg(json_build_object('nick', q.nick, 'me', q.id = p.id) order by m.joined_at)
+      from public.memberships m join public.profiles q on q.id = m.profile_id where m.project_id = pr.id
+    ), '[]'::json)
+  );
+end $$;
+
 -- Predlog projekta (sekundarno). Ide mentoru na odobrenje.
 create or replace function public.propose_project(p_title text, p_sentence text, p_tag text)
 returns uuid language plpgsql security definer set search_path = '' as $$
@@ -757,7 +776,7 @@ revoke all on all functions in schema public from public, anon, authenticated;
 grant execute on function
   public.claim_demo_code(text), public.get_me(), public.redeem_code(text), public.suggest_nicks(),
   public.set_nick(text), public.save_interests(text[]), public.respond_invite(uuid, boolean),
-  public.join_project(uuid), public.get_for_you(), public.get_my_teams(),
+  public.join_project(uuid), public.get_for_you(), public.get_my_teams(), public.get_team(uuid),
   public.propose_project(text, text, text), public.get_admin(), public.set_registrations(boolean),
   public.approve_project(uuid, boolean), public.reset_demo(), public.generate_codes(int),
   public.export_stand_stats()

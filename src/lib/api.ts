@@ -94,6 +94,11 @@ export interface MyTeams {
   proposals: Proposal[]
 }
 
+export interface TeamDetail {
+  project: Project
+  members: { nick: string; me: boolean }[]
+}
+
 export interface WallItem {
   id: number
   nick: string

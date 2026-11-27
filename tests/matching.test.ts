@@ -107,4 +107,21 @@ describe('spajanje', () => {
     const s = JSON.stringify(p.invite)
     expect(s).not.toMatch(/score|skor|alone|bez_tima|priority/i)
   })
+
+  it('pregled tima: svi članovi redom ulaska, sa oznakom „ja“; zatvoren tim se ne vidi', async () => {
+    const db = await freshDb()
+    const a = await newParticipant(db, ['robotika'])
+    await rpc(db, a.uid, 'respond_invite', { p_invite: a.invite!.id, p_accept: true })
+    const b = await newParticipant(db, ['robotika'])
+    await rpc(db, b.uid, 'respond_invite', { p_invite: b.invite!.id, p_accept: true })
+    const t = await rpc<{ project: { title: string; is_member: boolean }; members: { nick: string; me: boolean }[] }>(
+      db, b.uid, 'get_team', { p_project: a.invite!.project.id })
+    expect(t.project.is_member).toBe(true)
+    expect(t.members).toEqual([{ nick: a.nick, me: false }, { nick: b.nick, me: true }])
+    const author = await newParticipant(db, ['ideje'])
+    const id = await rpc<string>(db, author.uid, 'propose_project', { p_title: 'Tajni plan', p_sentence: 'Još se ne vidi.', p_tag: 'ideje' })
+    await expect(rpc(db, a.uid, 'get_team', { p_project: id })).rejects.toThrow(/nije pronađen/)
+    await expect(rpc(db, author.uid, 'get_team', { p_project: id })).resolves.toBeTruthy()
+    await expect(rpc(db, null, 'get_team', { p_project: id })).rejects.toThrow(/permission denied/)
+  })
 })

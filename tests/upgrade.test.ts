@@ -1,5 +1,6 @@
 // Nadogradnja v1 → v2 nad pravom v1 bazom (tests/fixtures/v1-setup.sql = setup.sql sa taga v1-demo).
 import { describe, expect, it } from 'vitest'
+import { readdirSync } from 'node:fs'
 import { PGlite } from '@electric-sql/pglite'
 import { buildUpgrade } from '../scripts/gen-upgrade'
 import { TAGS } from '../src/config/demo'
@@ -61,17 +62,18 @@ describe('konfiguracija', () => {
   })
 })
 
-describe('zakrpa kratkih nikova', () => {
-  it('nad v2 bazom sa starim nikovima radi i nudi nove', async () => {
-    const db = await freshDb()
-    await db.exec(read('supabase/zakrpa-kratki-nikovi.sql'))
-    await db.exec(read('supabase/zakrpa-kratki-nikovi.sql'))
-    const p = await newParticipant(db, ['robotika'])
-    expect(p.nick).toMatch(/^[A-ZČĆŠŽĐ][a-zčćšžđ]+$/)
-    // svaka funkcija iz zakrpe je ista kao u setup.sql
-    const setup = read('supabase/setup.sql')
-    for (const fn of read('supabase/zakrpa-kratki-nikovi.sql').split(/(?=create or replace function)/).slice(1)) {
-      expect(setup).toContain(fn.trim())
-    }
-  })
+describe('zakrpe za v2 bazu', () => {
+  for (const f of readdirSync(new URL('../supabase/', import.meta.url)).filter((x) => x.startsWith('zakrpa-'))) {
+    it(`${f}: radi dvaput nad v2 bazom i iste funkcije su u setup.sql`, async () => {
+      const db = await freshDb()
+      await db.exec(read('supabase/' + f))
+      await db.exec(read('supabase/' + f))
+      const p = await newParticipant(db, ['robotika'])
+      expect(p.nick).toMatch(/^[A-ZČĆŠŽĐ][a-zčćšžđ]+$/)
+      const setup = read('supabase/setup.sql')
+      for (const fn of read('supabase/' + f).split(/(?=create or replace function)/).slice(1)) {
+        expect(setup).toContain(fn.split(/\n(?=revoke|grant)/)[0].trim())
+      }
+    })
+  }
 })

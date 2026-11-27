@@ -18,6 +18,13 @@ test('telefon: Uđi → ime → interesovanja → poziv → tim; osvježavanje n
   await card.getByRole('button', { name: 'Pridružujem se' }).click()
   await expect(p.getByRole('heading', { name: 'Moji timovi' })).toBeVisible()
   await expect(p.getByTestId('team-card').first()).toContainText(nick)
+  // pregled tima: dodir otvara tim sa svim članovima
+  await p.getByTestId('team-card').first().click()
+  await expect(p.getByTestId('team-page')).toBeVisible()
+  await expect(p.getByTestId('team-members')).toContainText(`${nick}(ti)`)
+  await expect(p.getByTestId('team-count')).toHaveText('1 član')
+  await p.getByRole('button', { name: 'Nazad' }).click()
+  await expect(p.getByRole('heading', { name: 'Moji timovi' })).toBeVisible()
   test.info().annotations.push({ type: 'trajanje toka', description: `${Date.now() - t0} ms` })
 
   // nema horizontalnog skrolovanja na 390 px
@@ -51,6 +58,10 @@ test('„Ne sada“ → „Za tebe“ i ručno pridruživanje', async ({ browser
   await p.getByTestId('invite-card').getByRole('button', { name: 'Ne sada' }).click()
   await expect(p.getByRole('heading', { name: 'Za tebe' })).toBeVisible()
   await expect(p.getByTestId('invite-card')).toHaveCount(0)
+  // pregled tima iz „Za tebe“, pa pridruživanje sa ekrana tima
+  await p.getByTestId('team-card').filter({ hasText: 'Eksperimenti za Dan nauke' }).click()
+  await expect(p.getByTestId('team-page')).toBeVisible()
+  await p.getByRole('button', { name: 'Nazad' }).click()
   await p.getByTestId('team-card').filter({ hasText: 'Eksperimenti za Dan nauke' }).getByTestId('join').click()
   await expect(p.getByRole('heading', { name: 'Moji timovi' })).toBeVisible()
   await expect(p.getByTestId('team-card')).toContainText('Eksperimenti za Dan nauke')

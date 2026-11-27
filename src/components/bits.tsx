@@ -1,6 +1,7 @@
 // Mali zajednički dijelovi: zaglavlje, oznake, kartica tima, poziv, „Imam kod“.
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { Icon } from './Icon'
 import { APP, MAX_TAGS, MIN_TAGS, TAGS, tagIcon, tagLabel } from '../config/demo'
 import { fmtDate, members, needYou } from '../lib/format'
 import { redeemCode, type Invite, type Me, type Project } from '../lib/api'
@@ -49,8 +50,10 @@ export function TagPicker({ value, onChange }: { value: string[]; onChange: (v: 
 export const tagsOk = (v: string[]) => v.length >= MIN_TAGS && v.length <= MAX_TAGS
 
 export function TeamCard({ p, onJoin, busy }: { p: Project; onJoin?: () => void; busy?: boolean }) {
+  const nav = useNavigate()
   return (
-    <article className="card team" data-testid="team-card">
+    <article className="card team tap" data-testid="team-card" role="link" tabIndex={0} aria-label={`Tim: ${p.title}`}
+      onClick={() => nav(`/tim/${p.id}`)} onKeyDown={(e) => e.key === 'Enter' && nav(`/tim/${p.id}`)}>
       <div className="pcard">
         <div className="ptile">{tagIcon(p.tag)}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -61,13 +64,14 @@ export function TeamCard({ p, onJoin, busy }: { p: Project; onJoin?: () => void;
           </div>
           {p.members.length > 0 && <div className="tiny" style={{ marginTop: 4 }}>{p.members.slice(0, 6).join(' · ')}</div>}
         </div>
+        <span className="chev"><Icon name="chev" size={20} /></span>
       </div>
       {onJoin && (
         <div style={{ marginTop: 10 }}>
           {p.is_member ? (
             <span className="badge green">✓ Tvoj tim</span>
           ) : (
-            <button className="btn small soft" disabled={busy} onClick={onJoin} data-testid="join">Pridruži se</button>
+            <button className="btn small soft" disabled={busy} onClick={(e) => { e.stopPropagation(); onJoin() }} data-testid="join">Pridruži se</button>
           )}
         </div>
       )}

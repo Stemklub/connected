@@ -4,6 +4,7 @@ import { Header } from './components/bits'
 import { Icon } from './components/Icon'
 import { Entry } from './screens/Entry'
 import { Teams } from './screens/Teams'
+import { Team } from './screens/Team'
 import { Profile } from './screens/Profile'
 import { Platno } from './screens/Platno'
 import { Admin } from './screens/Admin'
@@ -37,6 +38,7 @@ function Shell() {
         <Route path="/" element={<Entry />} />
         {ready && <Route path="/timovi" element={<Teams />} />}
         {ready && <Route path="/profil" element={<Profile />} />}
+        {ready && <Route path="/tim/:id" element={<Team />} />}
         <Route path="*" element={<Navigate to={{ pathname: '/', search: loc.search }} replace />} />
       </Routes>
       {ready && <BottomNav />}
